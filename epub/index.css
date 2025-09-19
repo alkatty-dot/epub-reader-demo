@@ -238,3 +238,230 @@
 		.adjust-btn:hover {
 		    background-color: #e0e0e0; /* 滑鼠懸停時的背景色 */
 		}
+/* ====== Global polish: typography, radius, shadows, motion ====== */
+:root {
+  --font-sans: ui-sans-serif, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", Arial, sans-serif;
+  --radius: 16px;
+  --radius-sm: 10px;
+
+  /* Light theme tokens (覆蓋會在 [data-theme] 下方處理) */
+  --bg: #f6f7fb;
+  --panel: #ffffffcc; /* 半透明玻璃感 */
+  --border: #e6e7eb;
+  --text: #1c1e26;
+  --muted: #6b7280;
+  --accent: #3b82f6;
+  --accent-weak: #93c5fd;
+
+  --shadow-sm: 0 2px 8px rgba(16, 24, 40, 0.08);
+  --shadow: 0 10px 30px rgba(16, 24, 40, 0.14);
+
+  --hit: 44px; /* 便於觸控的點擊大小 */
+}
+
+/* Dark theme 覆蓋（當前主題切換時可在 body 上加 data-theme="dark"；下方JS會自動處理radio） */
+[data-theme="dark"] {
+  --bg: #0b0f14;
+  --panel: #0f172acc;
+  --border: #1f2937;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --accent: #60a5fa;
+  --accent-weak: #1d4ed8;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.4);
+  --shadow: 0 12px 36px rgba(0,0,0,.6);
+}
+
+/* MI theme（若你有「mi」主題，也給它一套更有品牌感的色票） */
+[data-theme="mi"] {
+  --bg: #fff8ef;
+  --panel: #ffffffd6;
+  --border: #ffe0bf;
+  --text: #2a1f17;
+  --muted: #8b6b50;
+  --accent: #ff8a00;
+  --accent-weak: #ffd7a3;
+}
+
+/* 基礎排版與背景 */
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ====== Viewer polish（保留你原本的自適應設定） ====== */
+#viewer {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+/* 邊緣的淡淡導讀光暈：暗示左右可翻頁（純視覺，不影響事件區） */
+#viewer::before,
+#viewer::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: min(8vw, 96px);
+  pointer-events: none;
+}
+#viewer::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(0,0,0,.06), transparent);
+}
+#viewer::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(0,0,0,.06), transparent);
+}
+[data-theme="dark"] #viewer::before {
+  background: linear-gradient(90deg, rgba(255,255,255,.06), transparent);
+}
+[data-theme="dark"] #viewer::after {
+  background: linear-gradient(270deg, rgba(255,255,255,.06), transparent);
+}
+
+/* ====== 工具列 / 面板（玻璃感） ====== */
+#toolDiv, #toc, .panel {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* 工具列區塊容器（若你已有定位，我只做內距與排列美化） */
+#toolDiv {
+  padding: 14px 16px;
+  min-width: 280px;
+}
+
+/* 工具列內各組件間距 */
+#toolDiv .row + .row { margin-top: 12px; }
+
+/* 目錄面板（TOC） */
+#toc {
+  max-width: min(86vw, 420px);
+  max-height: min(80vh, 680px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+#toc header {
+  padding: 14px 16px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+#toc .toc-body {
+  overflow: auto;
+  padding: 8px 6px;
+}
+#toc .toc-body a {
+  display: block;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+}
+#toc .toc-body a:hover {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+#toc .toc-body a:active {
+  transform: translateY(1px);
+}
+
+/* ====== Buttons / Inputs ====== */
+.button, #toolButton a, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--hit);
+  min-width: var(--hit);
+  padding: 0 14px;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  transition: transform .08s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+}
+[data-theme="dark"] .button,
+[data-theme="dark"] #toolButton a,
+[data-theme="dark"] .btn {
+  background: #0b1220;
+}
+.button:hover, #toolButton a:hover, .btn:hover {
+  box-shadow: var(--shadow);
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
+}
+.button:active, #toolButton a:active, .btn:active {
+  transform: translateY(1px);
+}
+.button--primary {
+  background: var(--accent);
+  color: white;
+  border-color: transparent;
+}
+.button--primary:hover {
+  background: color-mix(in oklab, var(--accent) 88%, var(--accent-weak));
+}
+
+/* Toggle / Radio 行為區域加大 */
+label, .control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+label:hover, .control:hover {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+/* Range / Select */
+input[type="range"] {
+  accent-color: var(--accent);
+}
+select {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  padding: 8px 12px;
+}
+[data-theme="dark"] select { background: #0b1220; }
+
+/* 可讀的捲軸 */
+*::-webkit-scrollbar { height: 10px; width: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--accent) 40%, #bbb);
+  border-radius: 999px;
+}
+
+/* ====== 載入過場（淡入） ====== */
+.is-loading #viewer {
+  opacity: .5;
+  filter: saturate(.8);
+}
+.viewer-fade-in {
+  animation: viewerFade .26s ease-out;
+}
+@keyframes viewerFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 偏好減少動作者，關閉動畫 */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

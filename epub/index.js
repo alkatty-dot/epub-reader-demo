@@ -1,468 +1,531 @@
-/* EPUB Reader UI + Logic
- * EPUB 檔案放在 ../外公睡著了.epub （父資料夾）
- */
-
-(function () {
-  const $ = (sel, el = document) => el.querySelector(sel);
-
-  // Elements
-  const main = $(".main");
-  const btnToc = $("#btnToc");
-  const btnCloseToc = $("#btnCloseToc");
-  const tocPanel = $("#tocPanel");
-  const tocList = $("#tocList");
-  const btnPrev = $("#btnPrev");
-  const btnNext = $("#btnNext");
-  const fontSize = $("#fontSize");
-  const themeSelect = $("#themeSelect");
-  const viewer = $("#viewer");
-
-  // State
-  let book, rendition, currentTheme = "light";
-  // --- Zoom/Spread State ---
-  function defaultZoomMode(){
-  return (window.innerWidth >= 1024 ? 'fit-best' : 'fit-width');
-}
-let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZoomMode()), scale: 1 };
-  function setZoomMode(v){ zoomState.mode = v; relayout(); }
-  function setCustomZoomFromRange(){ if (zoomMode?.value==='custom') zoomState.mode='custom'; relayout(); }
-
-  // Ensure the iframe has a non-trivial size and trigger resizes if needed
-  async function ensureVisible() {
-    for (const t of [0, 50, 150, 300]) {
-      await new Promise(r => setTimeout(r, t));
-      const iframe = document.querySelector('#viewer iframe');
-      const w = iframe?.clientWidth || document.getElementById('viewer').clientWidth;
-      const h = iframe?.clientHeight || document.getElementById('viewer').clientHeight;
-      if (w > 320 && h > 200) {
-        try {
-          const loc = rendition.currentLocation();
-          rendition.resize(document.getElementById('viewer').clientWidth, document.getElementById('viewer').clientHeight);
-          if (loc) await rendition.display(loc.start.cfi);
-        } catch(e){}
-        break;
-      }
+(function() {
+    var isRendering = false; // Added: Track rendering state
+    function isFixedLayout(book) {
+        return book.package.metadata.layout === 'pre-paginated';
     }
-  }
-
-  function detectFXL() {
-    const md = book?.package?.metadata || {};
-    return md.layout === 'pre-paginated' || md.fixed_layout === true;
-  }
-
-  
-  function autoMapSpread() {
-    const w = document.getElementById('viewer').clientWidth || 0;
-    const isFXL = detectFXL();
-    // Heuristic: wide screens show both, narrow single
-    if (isFXL) return (w >= 900 ? 'both' : 'none');
-    return (w >= 900 ? 'both' : 'none'); // for reflow paginated as well
-  }
-
-  function applyLayoutByMode(mode) {
-    // mode: 'none' | 'auto' | 'both'  (UI semantics)
-    // for reflow: keep paginated, spread depends on mode
-    // for FXL: force paginated; 'auto' -> 'both' (對頁), 'none' -> 'none'
-    const isFXL = detectFXL();
-    let spreadMode = (mode==='auto') ? autoMapSpread() : mode;
-    if (isFXL) {
-      rendition.flow('paginated');
-      if (mode === 'auto') spreadMode = 'both'; // FXL 預設對頁顯示
-    } else {
-      rendition.flow('paginated');
+    
+    function setupTool() {
+        var viewerDiv = document.getElementById("viewer");
+        var viewerRect = viewerDiv.getBoundingClientRect();
+        
+        var toolButton = document.getElementById("toolButton");
+        toolButton.style.top = viewerRect.top + "px";   
+        toolButton.style.left = (viewerRect.left + viewerRect.width  - toolButton.getBoundingClientRect().width) +"px" ;
+        toolButton.style.height = 100 + "px";
+        
+        var viewerEvent = document.getElementById("viewer_event");
+        viewerEvent.style.top = viewerRect.top + "px";   
+        viewerEvent.style.left = viewerRect.left + "px"; 
+        
+        var toolDiv = document.getElementById("toolDiv");
+        toolDiv.style.top = viewerRect.top + "px";
+        toolDiv.style.left = viewerRect.left + "px";
+        toolDiv.style.height = (viewerRect.height-30) + "px";
+        toolDiv.style.width = (viewerRect.width *0.8) + "px";
+        
+        viewerEvent.style.height = viewerRect.height + "px";
+        viewerEvent.style.width = viewerRect.width + "px";
     }
-    try { rendition.spread(spreadMode); } catch(e) {}
-  }
+
+    var book;
+    var rendition;
+    var cfiString;
+    var pageProgressionDirection;
+
+    function changeLayout() {
+        book.destroy();
+        start("viewer", "book2/item/standard.opf");
+    }
+
+    function start(containerId, bookUrl) {
+        var layout = document.querySelector('input[name="layout"]:checked').value;
+        
+        book = ePub(bookUrl);
+        book.ready.then(function () { 
+            const packageDocument = book.package;
+            pageProgressionDirection = packageDocument.metadata['direction'];
+
+            if (pageProgressionDirection === 'ltr') {
+                console.log("這是左至右的翻頁方向");
+            } else if (pageProgressionDirection === 'rtl') {
+                console.log("這是右至左的翻頁方向");
+            } else {
+                console.log("沒有明確設定翻頁方向");
+            }
+            
+            const fixedLayout = isFixedLayout(book);
+            console.log(fixedLayout);   
+            rendition = book.renderTo(containerId, { 
+                spread: layout,
+                width: "100%",
+                height: "100%",
+            });
+            
+            if (fixedLayout) {
+                document.getElementById("tool_theme_div").style.display = 'none';
+                document.getElementById("tool_lineHeigh_div").style.display = 'none';
+                document.getElementById("tool_letterSpacing_div").style.display = 'none';
+                document.getElementById("tool_fontSize_div").style.display = 'none';
+            }
+            
+            rendition.themes.register('dark', { "body": { "color": "white", 'background-color': 'black' } });
+            rendition.themes.register('light', { "body": { "color": "black", 'background-color': 'white' } });
+            rendition.themes.register('mi', { "body": { "color": "black", 'background-color': 'Beige' } });
+            changeFontSize();
+            changeTheme();
+            changeLetterSpacing();
+            changeLineHeight();
+            setupTool();
+            
+            if(cfiString) {
+                rendition.display(cfiString).then(() => { // Added: Handle display promise
+                    isRendering = false;
+                });
+            } else {
+                rendition.display().then(() => { // Added: Handle display promise
+                    isRendering = false;
+                });
+            }
+        });
+    }
 
 
-  // ---------- Metadata to header ----------
-  async function applyMetadata() {
-    try {
-      const meta = await book.loaded.metadata;
-      const title = meta?.title || '';
-      const publisher = meta?.publisher || '';
-      // Try to find ISBN in identifiers
-      let isbn = '';
-      const idents = (meta?.identifiers || []);
-      idents.forEach(it => {
-        const v = (it?.value || it || '').toString();
-        if (/97[89]\d{10}/.test(v)) isbn = v;
-      });
-      const tEl = document.getElementById('bookTitle');
-      const mEl = document.getElementById('bookMeta');
-      if (tEl) tEl.textContent = title || 'EPUB Reader';
-      if (mEl) {
-        const bits = [];
-        if (publisher) bits.push(publisher);
-        if (isbn) bits.push('ISBN: ' + isbn);
-        mEl.textContent = bits.length ? '｜' + bits.join(' ｜ ') : '';
-      }
-    } catch (e) {}
-  }
-
-
-  // ---------- Spread & Zoom ----------
-  const spreadSelect = document.getElementById('spreadSelect');
-  const zoomMode = document.getElementById('zoomMode');
-  const zoomRange = document.getElementById('zoomRange');
-  let currentScale = 1;
-
-  function setSpread(mode){
-    try{ rendition.spread(mode); }catch(e){}
-    relayout();
-  }
-
-  function fitFixedLayout(){
-    const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
-    if (!isFXL) return;
-    const iframe = document.querySelector('#viewer iframe');
-    if (!iframe) return;
-    const cw = iframe.contentWindow, doc = cw?.document;
-    if (!doc) return;
-    const vw = document.getElementById('viewer').clientWidth;
-    const vh = document.getElementById('viewer').clientHeight;
-    const dw = doc.documentElement.scrollWidth || 0;
-    const dh = doc.documentElement.scrollHeight || 0;
-    if (!dw || !dh || !vw || !vh) return;
-
-    let s = 1;
-    if (zoomMode?.value === 'fit-height') s = vh / dh;
-    else if (zoomMode?.value === 'custom') s = (parseInt(zoomRange.value,10)||100)/100;
-    else s = vw / dw;
-
-    currentScale = s;
-    // removed v11
-    // removed v11
-    const w = Math.ceil(dw * s), h = Math.ceil(dh * s);
-    iframe.style.width = w + 'px';
-    iframe.style.height = h + 'px';
-  }
-
-  function relayout(){
-
-    const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
-    if (isFXL){
-      const iframe = document.querySelector('#viewer iframe');
-      const viewerEl = document.getElementById('viewer');
-      if (iframe && viewerEl){
-        const vw = viewerEl.clientWidth, vh = viewerEl.clientHeight;
-        const doc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (doc){
-          const dw = Math.max(doc.documentElement.scrollWidth, doc.body.scrollWidth);
-          const dh = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
-          let s = 1;
-          if (zoomState.mode === 'fit-height') s = vh / (dh || vh);
-          else if (zoomState.mode === 'custom') s = (parseInt(zoomRange?.value||'100',10))/100;
-          else s = vw / (dw || vw); // fit-width
-          zoomState.scale = s;
-          // removed v11
-          // removed v11
-          // removed v11
-          // removed v11
+    function changeFontSize() {
+        var selectedFontSize = document.getElementById("fontSize").value;
+        rendition.themes.fontSize(selectedFontSize);
+    }
+    
+    function changeTheme() {
+        var theme = document.querySelector('input[name="theme"]:checked').value;
+        var toolButton = document.getElementById("toolButton");
+        
+        if (toolButton) {
+            if (theme === 'dark') {
+                toolButton.style.color = "white";
+            } else {
+                toolButton.style.color = "black";
+            }
         }
-      }
-    } else {
-      const iframe = document.querySelector('#viewer iframe');
-      if (iframe){ iframe.style.width='100%'; iframe.style.height='100%'; }
+
+        rendition.themes.select(theme);
     }
 
-    if (book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout){
-      fitFixedLayout();
-    } else {
-      const iframe = document.querySelector('#viewer iframe');
-      if (iframe){
-        iframe.style.width = '100%';
-        iframe.style.height = '100%';
-      }
+    function changeLetterSpacing() {
+        var selectedLetterSpacing = document.getElementById("letterSpacing").value;
+        rendition.themes.default({
+            "body": {
+                "letter-spacing": selectedLetterSpacing,
+            }
+        });
+        rendition.themes.update('default');
     }
-  }
 
-  spreadSelect?.addEventListener('change', () => applyLayoutByMode(spreadSelect.value));
-  zoomMode?.addEventListener('change', () => { relayout(); });
-  zoomRange?.addEventListener('input', () => { if (zoomMode.value==='custom') relayout(); });
-
-
-  document.addEventListener("DOMContentLoaded", init, { once: true });
-
-  // v9: observe header height and write to CSS var so main area is correctly sized on mobile
-  function updateAppbarHeightVar(){
-    try{
-      const h = document.querySelector('.appbar')?.offsetHeight || 56;
-      document.documentElement.style.setProperty('--appbar-h', h + 'px');
-    }catch(e){}
-  }
-  updateAppbarHeightVar();
-  if (window.ResizeObserver){
-    const ro = new ResizeObserver(updateAppbarHeightVar);
-    const appbar = document.querySelector('.appbar');
-    if (appbar) ro.observe(appbar);
-  }
-  window.addEventListener('resize', updateAppbarHeightVar);
-
-
-  async function init() {
-    // EPUB 在父資料夾
-    
-    // ---- Resolve book path from URL or global selected_book (set by ../get_data.js) ----
-    function getQueryParam(name) {
-      const p = new URLSearchParams(window.location.search);
-      return p.get(name);
+    function changeLineHeight() {
+        var selectedLineHeight = document.getElementById("lineHeight").value;
+        rendition.themes.default({
+            "*": {
+                "line-height": selectedLineHeight,
+            }
+        });
+        rendition.themes.update('default');
     }
-    const qpFile = getQueryParam("file") || getQueryParam("path");
-    const qpId = getQueryParam("id");
 
-    let bookPath;
-    if (qpFile) {
-      // If index.html passes explicit file name/path
-      bookPath = qpFile;
-      if (!/^https?:\/\//.test(bookPath)) {
-        // relative to epub.html -> prefer parent folder root
-        bookPath = "../" + bookPath;
-      }
-    } else if (typeof selected_book === "object" && selected_book && selected_book.file) {
-      // Loaded from data.js + get_data.js
-      bookPath = "../" + selected_book.file;
-    } else if (qpId) {
-      // Fallback: try to map id to booksData if available
-      const found = (typeof booksData !== "undefined") ? booksData.find(b => String(b.number) === String(qpId) || String(b.id) === String(qpId)) : null;
-      bookPath = found && found.file ? ("../" + found.file) : "../外公睡著了.epub";
-    } else {
-      // Last resort
-      bookPath = "../外公睡著了.epub";
+    function goToPreviousPage() {
+        if (isRendering){
+			 return;
+		} // Added: Check rendering state
+        isRendering = true;
+        rendition.prev().then(() => {
+            cfiString = rendition.currentLocation().start.cfi;
+            isRendering = false;
+        }).catch(() => {
+            isRendering = false;
+        });
     }
-    bookPath = encodeURI(bookPath);
-    
-    book = ePub(bookPath);
 
-    rendition = book.renderTo("viewer", {
-      width: "100%",
-      height: "100%",
-      spread: "auto",
-      flow: "scrolled-doc",
-      allowScriptedContent: true
-    });
-
-    registerThemes();
-
-  function applyDesktopBestZoom(){
-    try{
-      const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
-      if (window.innerWidth >= 1024 && isFXL){
-        const zm = document.getElementById('zoomMode');
-        if (zm && (!zm.value || zm.value === 'fit-width')) { zm.value = 'fit-best'; zoomState.mode = 'fit-best'; }
-      }
-    }catch(e){}
-  }
-
-applyDesktopBestZoom();
-
-  function isDesktop(){ return window.innerWidth >= 1024; }
-  function forceDesktopToc(){
-    if (isDesktop()){
-      try{
-        tocPanel.removeAttribute('hidden');
-        main.classList.add('sidebar-open');
-      }catch(e){}
+    function goToNextPage() {
+        if (isRendering){
+			 return;
+		} // Added: Check rendering state
+        isRendering = true;
+        rendition.next().then(() => {
+            cfiString = rendition.currentLocation().start.cfi;
+            isRendering = false;
+        }).catch(() => {
+            isRendering = false;
+        });
     }
-  }
-  forceDesktopToc();
-  window.addEventListener('resize', forceDesktopToc);
 
-    await rendition.display();
-updateAppbarHeightVar();
+    var isLoadToc = false;
 
-    // Force TOC open on first load (temp workaround)
-    try{
-      
-    }catch(e){}
-
-await ensureVisible();
-
-    // Choose flow after package is loaded: reflow -> paginated; fixed-layout -> scrolled-doc
-    async function autoChooseFlow() {
-      try {
-        await book.ready;
-        const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
-        if (isFXL) {
-          rendition.flow("scrolled-doc");
-        } else {
-          rendition.flow("paginated");
+    function showToc() {
+        const toolDiv = document.getElementById("toolDiv");
+        if (toolDiv && toolDiv.style.display !== "none") {
+            closeTool();
         }
-      } catch (e) {}
+        
+        var tocDiv = document.getElementById("toc");
+        if (tocDiv && tocDiv.style.display !== "none") {
+            closeToc();
+            return;
+        }
+        tocDiv.style.display = "block";
+        if(false == isLoadToc) {
+            loadToc();
+        }
     }
-    
 
-relayout();
-
-    applyMetadata();
-    relayout();
-    rendition.on('rendered', () => { relayout(); });
-    rendition.on('relocated', () => { relayout(); });
-    rendition.on('displayed', () => { relayout(); });
-
-maybeFixLayout();
-
-    // Global content CSS injected into book iframe
-    rendition.themes.default({
-      "html, body": { "margin": "0", "padding": "1rem" },
-      "*": { "box-sizing": "border-box" },
-      "img, svg, video, canvas": { "max-width": "100%", "height": "auto" },
-      "figure": { "margin": "0" },
-      "a": { "text-decoration": "none", "color": "inherit" },
-      "p": { "margin": "0 0 1em 0" },
-      "body": { "max-width": "100%", "word-break": "break-word" },
-      "img": { "display":"block" },
-      "html, body": { "column-gap": "2rem" },
-      "h1, h2, h3, h4, h5, h6": { "margin": "1.2em 0 .6em" },
-      "@page": { "margin": "0 0 1rem 0" }
-    });
-    
-
-    const nav = await book.loaded.navigation;
-    buildToc(nav);
-
-    wireControls();
-    window.addEventListener("resize", handleResize);
-window.addEventListener('resize', () => { 
-    // If UI is on 'auto', recompute spread
-    if (document.getElementById('spreadSelect')?.value === 'auto'){
-      applyLayoutByMode('auto');
+    function closeToc() {
+        var tocDiv = document.getElementById("toc");
+        tocDiv.style.display = "none";
     }
-});
 
-  // ---- Auto resize when #viewer size changes (sidebar toggle, window resize, etc.) ----
-  const viewerEl = document.getElementById('viewer');
-  if (window.ResizeObserver && viewerEl){
-    const ro = new ResizeObserver(() => {
-      try {
-        const loc = rendition.currentLocation();
-        rendition.resize(viewerEl.clientWidth, viewerEl.clientHeight);
-        if (loc) rendition.display(loc.start.cfi);
-      } catch(e){}
-    });
-    ro.observe(viewerEl);
-  }
+    function showTool() {
+        const toc = document.getElementById("toc");
+        if (toc && toc.style.display !== "none") {
+            closeToc();
+        }
+        
+        var toolDiv = document.getElementById("toolDiv");
+        if (toolDiv && toolDiv.style.display !== "none") {
+            closeTool();
+            return;
+        }
+        toolDiv.style.display = "block";
+    }
 
-window.addEventListener("resize", maybeFixLayout);
-    document.addEventListener("keydown", onKeydown);
-  }
+    function closeTool() {
+        var toolDiv = document.getElementById("toolDiv");
+        toolDiv.style.display = "none";
+    }
 
-  function registerThemes() {
-    rendition.themes.register("light", {
-      body: { background: "#ffffff", color: "#111827", "line-height": "1.6" }
-    });
-    rendition.themes.register("dark", {
-      body: { background: "#0b1020", color: "#e5e7eb", "line-height": "1.6" }
-    });
-    rendition.themes.register("mi", {
-      body: { background: "#f5efe6", color: "#3b3b3b", "line-height": "1.6" }
-    });
-    setTheme(currentTheme);
-  }
+    function loadToc() {
+        isLoadToc = true;
+        
+        var tocDiv = document.getElementById("toc");
+        var viewerDiv = document.getElementById("viewer");
 
-  function setTheme(name) {
-    currentTheme = name;
-    rendition.themes.select(name);
-    if (name === "dark") document.documentElement.setAttribute("data-ui-theme", "dark");
-    else document.documentElement.removeAttribute("data-ui-theme");
-  }
+        var viewerRect = viewerDiv.getBoundingClientRect();
 
-  function buildToc(nav) {
-    tocList.innerHTML = "";
-    if (!nav || !nav.toc) return;
-    nav.toc.forEach(item => {
-      const li = document.createElement("li");
-      const a = document.createElement("a");
-      a.textContent = item.label || "章節";
-      a.href = "#";
-      a.addEventListener("click", e => {
-        e.preventDefault();
-        rendition.display(item.href);
-        closeToc();
-      });
-      li.appendChild(a);
-      tocList.appendChild(li);
-    });
-  }
+        tocDiv.style.top = viewerRect.top + "px";
+        tocDiv.style.left = viewerRect.left + "px";
+        tocDiv.style.height = (viewerRect.height -30) + "px";
+        tocDiv.style.width = (viewerRect.width / 2) + "px";
 
-  function wireControls() {
-    btnPrev?.addEventListener("click", () => rendition.prev());
-    btnNext?.addEventListener("click", () => rendition.next());
-    fontSize?.addEventListener("change", () => rendition.themes.fontSize(fontSize.value));
-    themeSelect?.addEventListener("change", () => setTheme(themeSelect.value));
-    btnToc?.addEventListener("click", toggleToc);
-    btnCloseToc?.addEventListener("click", closeToc);
-  }
+        var tocList = document.getElementById("tocList");
+        tocList.innerHTML = '';
+        
+        book.loaded.navigation.then(function(toc) {
+            function createTocItem(chapter, level) {
+                var li = document.createElement("li");
+                var button = document.createElement("button");
+                button.innerHTML = chapter.label;
+                button.onclick = function() {
+                    rendition.display(chapter.href);
+                    closeToc();
+                };
 
-  function toggleToc() {
-    if (tocPanel.hasAttribute("hidden")) openToc();
-    else closeToc();
-  }
-  function openToc() {
-    tocPanel.removeAttribute("hidden");
-    main.classList.add("sidebar-open");
+                li.style.paddingLeft = (level * 20) + "px";
 
-    // re-apply after sidebar transition
-    setTimeout(() => { 
-      const loc = rendition.currentLocation();
-      if (loc) rendition.display(loc.start.cfi);
-      relayout();
-    try{ const loc = rendition.currentLocation(); rendition.resize(viewer.clientWidth, viewer.clientHeight); if (loc) rendition.display(loc.start.cfi);}catch(e){}
-    }, 50);
+                li.appendChild(button);
+                tocList.appendChild(li);
 
-  }
-  function closeToc() {
-  if (window.innerWidth >= 1024) { return; }
-    tocPanel.setAttribute("hidden", "");
-    main.classList.remove("sidebar-open");
+                if (chapter.subitems) {
+                    var subList = document.createElement("ul");
+                    chapter.subitems.forEach(function(subitem) {
+                        createTocItem(subitem, level + 1);
+                    });
+                    li.appendChild(subList);
+                }
+            }
 
-    // re-apply after sidebar transition
-    setTimeout(() => { 
-      const loc = rendition.currentLocation();
-      if (loc) rendition.display(loc.start.cfi);
-      relayout();
-    try{ const loc = rendition.currentLocation(); rendition.resize(viewer.clientWidth, viewer.clientHeight); if (loc) rendition.display(loc.start.cfi);}catch(e){}
-    }, 50);
+            toc.forEach(function(chapter) {
+                createTocItem(chapter, 0);
+            });
+        });
+    }
 
-  }
+    function adjustSelect(selectId, direction) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
 
-  function onKeydown(e) {
-    if (e.key === "ArrowLeft") rendition.prev();
-    if (e.key === "ArrowRight") rendition.next();
-  }
+        const options = Array.from(select.options);
+        const currentIndex = select.selectedIndex;
 
-  let resizeTimer = null;
-  function handleResize() {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      if (rendition) {
-        const loc = rendition.currentLocation();
-        rendition.resize(viewer.clientWidth, viewer.clientHeight);
-        if (loc) rendition.display(loc.start.cfi);
-      }
-    }, 100);
-  }
+        const newIndex = currentIndex + direction;
 
-  book?.ready?.catch(err => {
-    console.error(err);
-    viewer.innerHTML = `無法載入 EPUB：<code>../外公睡著了.epub</code><br/>請確認檔案存在於父資料夾，並以 HTTP 伺服器開啟。`;
-  });
+        if (newIndex >= 0 && newIndex < options.length) {
+            select.selectedIndex = newIndex;
+            select.dispatchEvent(new Event('change'));
+        }
+    }
+
+
+    function createElements() {
+        // Create toolButton
+        const toolButton = document.createElement('div');
+        toolButton.id = 'toolButton';
+        toolButton.innerHTML = `
+            <a id="setup_button">&nbsp;⚙</a>
+            <a id="show_toc">▥</a>
+        `;
+        document.body.appendChild(toolButton);
+
+        // Create toc
+        const toc = document.createElement('div');
+        toc.id = 'toc';
+        toc.style.display = 'none';
+        toc.innerHTML = `
+            <button id="closeToc">×</button>
+            <h3>目錄</h3>
+            <ul id="tocList"></ul>
+        `;
+        document.body.appendChild(toc);
+
+        // Create toolDiv
+        const toolDiv = document.createElement('div');
+        toolDiv.id = 'toolDiv';
+        toolDiv.style.display = 'none';
+        toolDiv.innerHTML = `
+            <button id="closeTool">×</button>
+            
+            <h3>樣式調整</h3>
+            <div id="tool_layout_div">
+                <label for="layout">版式</label>
+                <label>
+                    <input type="radio" name="layout" value="auto" checked> 自動
+                </label>
+                <label>
+                    <input type="radio" name="layout" value="none"> 單欄
+                </label>
+                <label>
+                    <input type="radio" name="layout" value="always"> 雙欄
+                </label>
+            </div>
+            
+            <div id="tool_theme_div">
+                <label for="theme">背景色</label>
+                <label>
+                    <input type="radio" name="theme" value="light" checked> 白色
+                </label>
+                <label>
+                    <input type="radio" name="theme" value="mi"> 米色
+                </label>
+                <label>
+                    <input type="radio" name="theme" value="dark"> 黑暗
+                </label>
+            </div>
+            <div id="tool_lineHeigh_div">
+                <label for="lineHeight">行距</label>
+                <button class="adjust-btn">-</button>
+                <select id="lineHeight">
+                    <option value="unset">預設</option>
+                    <option value="1">1</option>
+                    <option value="1.5">1.5</option>
+                    <option value="2">2</option>
+                </select>
+                <button class="adjust-btn">+</button>
+            </div>
+            <div id="tool_letterSpacing_div">
+                <label for="letterSpacing">字距</label>
+                <button class="adjust-btn">-</button>
+                <select id="letterSpacing">
+                    <option value="unset" selected>預設</option>
+                    <option value="0.1em">0.1em</option>
+                    <option value="0.2em">0.2em</option>
+                    <option value="0.3em">0.3em</option>
+                    <option value="0.4em">0.4em</option>
+                    <option value="0.5em">0.5em</option>
+                </select>
+                <button class="adjust-btn">+</button>
+            </div>
+            <div id="tool_fontSize_div">
+                <label for="fontSize">文字大小</label>
+                <button class="adjust-btn">-</button>
+                <select id="fontSize">
+                    <option value="unset" selected>預設</option>
+                    <option value="16px">16px</option>
+                    <option value="18px">18px</option>
+                    <option value="20px">20px</option>
+                    <option value="22px">22px</option>
+                    <option value="24px">24px</option>
+                    <option value="26px">26px</option>
+                    <option value="28px">28px</option>
+                    <option value="30px">30px</option>
+                </select>
+                <button class="adjust-btn">+</button>
+            </div>
+        `;
+        document.body.appendChild(toolDiv);
+
+        // Create viewer_event
+        const viewerEvent = document.createElement('div');
+        viewerEvent.id = 'viewer_event';
+        document.body.appendChild(viewerEvent);
+    }
+
+    function init(containerId, bookUrl) {
+        createElements();
+        document.addEventListener('DOMContentLoaded', function() {
+            start(containerId, bookUrl);
+            setupEventListeners();
+        });
+    }
+
+    function setupEventListeners() {
+        document.getElementById('setup_button').addEventListener('click', showTool);
+        document.getElementById('show_toc').addEventListener('click', showToc);
+        document.getElementById('closeToc').addEventListener('click', closeToc);
+        document.getElementById('closeTool').addEventListener('click', closeTool);
+
+        document.querySelectorAll('input[name="layout"]').forEach(input => {
+            input.addEventListener('change', changeLayout);
+        });
+        document.querySelectorAll('input[name="theme"]').forEach(input => {
+            input.addEventListener('change', changeTheme);
+        });
+        document.getElementById('lineHeight').addEventListener('change', changeLineHeight);
+        document.getElementById('letterSpacing').addEventListener('change', changeLetterSpacing);
+        document.getElementById('fontSize').addEventListener('change', changeFontSize);
+
+        document.querySelectorAll('.adjust-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const selectId = this.parentElement.querySelector('select').id;
+                const direction = this.textContent === '+' ? 1 : -1;
+                adjustSelect(selectId, direction);
+            });
+        });
+
+        var viewerEvent = document.getElementById("viewer_event");
+        viewerEvent.addEventListener("click", function(event) {
+            event.stopPropagation();
+
+            var toolDiv = document.getElementById("toolDiv");
+            var toc = document.getElementById("toc");
+            if (toolDiv && toolDiv.style.display !== "none") {
+                closeTool();
+                return;
+            }
+
+            if (toc && toc.style.display !== "none") {
+                closeToc();
+                return;
+            }
+
+            var viewer = event.currentTarget;
+            var rect = viewer.getBoundingClientRect();
+            var clickX = event.clientX;
+
+            if (clickX > rect.left + rect.width / 2) {
+                if(pageProgressionDirection) {
+                    if(pageProgressionDirection == 'ltr') {
+                        goToNextPage();
+                    } else if(pageProgressionDirection == 'rtl') {
+                        goToPreviousPage();
+                    }
+                } else {
+                    goToNextPage();
+                }
+            } else {
+                if(pageProgressionDirection) {
+                    if(pageProgressionDirection == 'ltr') {
+                        goToPreviousPage();
+                    } else if(pageProgressionDirection == 'rtl') {
+                        goToNextPage();
+                    }
+                } else {
+                    goToPreviousPage();
+                }
+            }
+        });
+
+        let startX = 0, startY = 0, endX = 0, endY = 0;
+
+        viewerEvent.addEventListener("touchstart", function(event) {
+            const touch = event.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+        });
+
+        viewerEvent.addEventListener("touchend", function(event) {
+            const toolDiv = document.getElementById("toolDiv");
+            const toc = document.getElementById("toc");
+
+            if (toolDiv && toolDiv.style.display !== "none") {
+                return;
+            }
+
+            if (toc && toc.style.display !== "none") {
+                return;
+            }
+
+            const touch = event.changedTouches[0];
+            endX = touch.clientX;
+            endY = touch.clientY;
+
+            const diffX = endX - startX;
+            const diffY = endY - startY;
+
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 200) {
+                if (diffX > 0) {
+                    if(pageProgressionDirection) {
+                        if(pageProgressionDirection == 'ltr') {
+                            goToNextPage();
+                        } else if(pageProgressionDirection == 'rtl') {
+                            goToPreviousPage();
+                        }
+                    } else {
+                        goToNextPage();
+                    }
+                } else {
+                    if(pageProgressionDirection) {
+                        if(pageProgressionDirection == 'ltr') {
+                            goToPreviousPage();
+                        } else if(pageProgressionDirection == 'rtl') {
+                            goToNextPage();
+                        }
+                    } else {
+                        goToPreviousPage();
+                    }
+                }
+            }
+        });
+
+        document.addEventListener("contextmenu", function (event) {
+            event.preventDefault();
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "ArrowLeft") {
+                goToPreviousPage();
+                event.preventDefault();
+            } else if (event.key === "ArrowRight") {
+                goToNextPage();
+                event.preventDefault();
+            } else {
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener("mousedown", function (event) {
+            if (event.button !== 0 && event.button !== 2) {
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener("keypress", function (event) {
+            event.preventDefault();
+        });
+    }
+
+    window.EPUBReader = {
+        init: init
+    };
 })();
 
-    // If pagination renders overly narrow columns, switch to 'scrolled-doc'
-    function maybeFixLayout() {
-      try {
-        const iframe = document.querySelector("#viewer iframe");
-        if (!iframe) return;
-        const cw = iframe.contentWindow;
-        const docWidth = cw.document.documentElement.clientWidth || 0;
-        if (docWidth && docWidth < 320) {
-          // Too narrow → use scrolled-doc
-          rendition.flow("scrolled-doc");
-          // re-display current location
-          const loc = rendition.currentLocation();
-          if (loc) rendition.display(loc.start.cfi);
-        }
-      } catch (e) {}
-    }
-    

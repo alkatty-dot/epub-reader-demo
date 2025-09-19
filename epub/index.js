@@ -1,515 +1,531 @@
-(function () {
-  // ===== Global State =====
-  var isRendering = false;
-  var book, rendition, cfiString, pageProgressionDirection;
-
-  // ===== Preferences =====
-  var STORE_KEY = 'epubReader.prefs';
-  function savePrefs(patch) {
-    try {
-      var cur = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-      localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign(cur, patch)));
-    } catch (e) {}
-  }
-  function loadPrefs() {
-    try {
-      return JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-    } catch (e) {
-      return {};
+(function() {
+    var isRendering = false; // Added: Track rendering state
+    function isFixedLayout(book) {
+        return book.package.metadata.layout === 'pre-paginated';
     }
-  }
-
-  // ===== Utils =====
-  function isFixedLayout(bk) {
-    return !!(bk && bk.package && bk.package.metadata && bk.package.metadata.layout === 'pre-paginated');
-  }
-  function $(id) { return document.getElementById(id); }
-
-  // ===== Floating UI positioning =====
-  function setupTool() {
-    var viewerDiv = $('viewer');
-    if (!viewerDiv) return;
-    var rect = viewerDiv.getBoundingClientRect();
-
-    var toolButton = $('toolButton');
-    if (toolButton) {
-      var w = toolButton.getBoundingClientRect().width;
-      toolButton.style.top = rect.top + 'px';
-      toolButton.style.left = (rect.left + rect.width - w) + 'px';
-      toolButton.style.height = '100px';
+    
+    function setupTool() {
+        var viewerDiv = document.getElementById("viewer");
+        var viewerRect = viewerDiv.getBoundingClientRect();
+        
+        var toolButton = document.getElementById("toolButton");
+        toolButton.style.top = viewerRect.top + "px";   
+        toolButton.style.left = (viewerRect.left + viewerRect.width  - toolButton.getBoundingClientRect().width) +"px" ;
+        toolButton.style.height = 100 + "px";
+        
+        var viewerEvent = document.getElementById("viewer_event");
+        viewerEvent.style.top = viewerRect.top + "px";   
+        viewerEvent.style.left = viewerRect.left + "px"; 
+        
+        var toolDiv = document.getElementById("toolDiv");
+        toolDiv.style.top = viewerRect.top + "px";
+        toolDiv.style.left = viewerRect.left + "px";
+        toolDiv.style.height = (viewerRect.height-30) + "px";
+        toolDiv.style.width = (viewerRect.width *0.8) + "px";
+        
+        viewerEvent.style.height = viewerRect.height + "px";
+        viewerEvent.style.width = viewerRect.width + "px";
     }
 
-    var viewerEvent = $('viewer_event');
-    if (viewerEvent) {
-      viewerEvent.style.top = (rect.top + 100) + 'px';
-      viewerEvent.style.left = rect.left + 'px';
-      viewerEvent.style.width = rect.width + 'px';
-      viewerEvent.style.height = (rect.height - 100) + 'px';
-      viewerEvent.style.display = 'block';
+    var book;
+    var rendition;
+    var cfiString;
+    var pageProgressionDirection;
+
+    function changeLayout() {
+        book.destroy();
+        start("viewer", "book2/item/standard.opf");
     }
 
-    var toc = $('toc');
-    if (toc && toc.style.display === 'block') {
-      var tw = toc.getBoundingClientRect().width;
-      toc.style.left = (rect.left + rect.width - tw) + 'px';
+    function start(containerId, bookUrl) {
+        var layout = document.querySelector('input[name="layout"]:checked').value;
+        
+        book = ePub(bookUrl);
+        book.ready.then(function () { 
+            const packageDocument = book.package;
+            pageProgressionDirection = packageDocument.metadata['direction'];
+
+            if (pageProgressionDirection === 'ltr') {
+                console.log("這是左至右的翻頁方向");
+            } else if (pageProgressionDirection === 'rtl') {
+                console.log("這是右至左的翻頁方向");
+            } else {
+                console.log("沒有明確設定翻頁方向");
+            }
+            
+            const fixedLayout = isFixedLayout(book);
+            console.log(fixedLayout);   
+            rendition = book.renderTo(containerId, { 
+                spread: layout,
+                width: "100%",
+                height: "100%",
+            });
+            
+            if (fixedLayout) {
+                document.getElementById("tool_theme_div").style.display = 'none';
+                document.getElementById("tool_lineHeigh_div").style.display = 'none';
+                document.getElementById("tool_letterSpacing_div").style.display = 'none';
+                document.getElementById("tool_fontSize_div").style.display = 'none';
+            }
+            
+            rendition.themes.register('dark', { "body": { "color": "white", 'background-color': 'black' } });
+            rendition.themes.register('light', { "body": { "color": "black", 'background-color': 'white' } });
+            rendition.themes.register('mi', { "body": { "color": "black", 'background-color': 'Beige' } });
+            changeFontSize();
+            changeTheme();
+            changeLetterSpacing();
+            changeLineHeight();
+            setupTool();
+            
+            if(cfiString) {
+                rendition.display(cfiString).then(() => { // Added: Handle display promise
+                    isRendering = false;
+                });
+            } else {
+                rendition.display().then(() => { // Added: Handle display promise
+                    isRendering = false;
+                });
+            }
+        });
     }
 
-    var toolDiv = $('toolDiv');
-    if (toolDiv && toolDiv.style.display === 'block') {
-      var uw = toolDiv.getBoundingClientRect().width;
-      toolDiv.style.left = (rect.left + rect.width - uw) + 'px';
+
+    function changeFontSize() {
+        var selectedFontSize = document.getElementById("fontSize").value;
+        rendition.themes.fontSize(selectedFontSize);
     }
-  }
-
-  // ===== TOC =====
-  function createTocItem(list, tocItem) {
-    var li = document.createElement('li');
-    var a = document.createElement('a');
-    a.textContent = tocItem.label;
-    a.href = '#';
-    a.onclick = function () {
-      if (!rendition) return false;
-      isRendering = true;
-      rendition.display(tocItem.href).then(function () {
-        try { cfiString = rendition.currentLocation().start.cfi; } catch (e) {}
-        isRendering = false;
-        closeToc();
-      }).catch(function () {
-        isRendering = false;
-      });
-      return false;
-    };
-    li.appendChild(a);
-
-    if (tocItem.subitems && tocItem.subitems.length) {
-      var ul = document.createElement('ul');
-      tocItem.subitems.forEach(function (child) { createTocItem(ul, child); });
-      li.appendChild(ul);
-    }
-    list.appendChild(li);
-  }
-
-  var dragX = 0, dragStartX = 0;
-  function slideIn(panelId) {
-    var panel = $(panelId), viewer = $('viewer');
-    if (!panel || !viewer) return;
-
-    var vr = viewer.getBoundingClientRect();
-    var w = panel.getBoundingClientRect().width;
-    panel.style.top = vr.top + 'px';
-    panel.style.height = vr.height + 'px';
-    panel.style.left = (vr.left + vr.width) + 'px';
-    panel.style.display = 'block';
-
-    var current = vr.left + vr.width;
-    var target = vr.left + vr.width - w;
-    var step = 30;
-    function anim() {
-      current -= step;
-      var left = current < target ? target : current;
-      panel.style.left = left + 'px';
-      if (left > target) requestAnimationFrame(anim);
-    }
-    requestAnimationFrame(anim);
-
-    var gripId = panelId === 'toc' ? 'closeTocDiv' : 'closeToolDiv';
-    var grip = $(gripId);
-    if (!grip) return;
-
-    grip.onmousedown = function (e) {
-      dragX = e.clientX;
-      dragStartX = e.clientX;
-      var headId = panelId === 'toc' ? 'closeToc' : 'closeTool';
-      var head = $(headId);
-      if (head) { head.style.backgroundColor = 'rgb(64,64,64)'; head.style.color = 'white'; }
-      e.preventDefault();
-    };
-    grip.onmousemove = function (e) {
-      if (!dragX) return;
-      var x = parseInt(panel.style.left, 10) || 0;
-      var newX = e.clientX;
-      var width = panel.getBoundingClientRect().width;
-      var minL = vr.left + vr.width - width;
-      var maxL = vr.left + vr.width;
-      var next = x + (newX - dragX);
-      if (next < minL) next = minL;
-      if (next > maxL) next = maxL;
-      panel.style.left = next + 'px';
-      dragX = newX;
-    };
-    grip.onmouseup = function () {
-      var headId = panelId === 'toc' ? 'closeToc' : 'closeTool';
-      var head = $(headId);
-      if (head) { head.style.backgroundColor = 'rgb(232,232,232)'; head.style.color = 'black'; }
-      var x = parseInt(panel.style.left, 10) || 0;
-      var width = panel.getBoundingClientRect().width;
-      var threshold = vr.left + vr.width - width / 2;
-      if (x > threshold) {
-        panel.style.left = (vr.left + vr.width) + 'px';
-        panel.style.display = 'none';
-      } else {
-        panel.style.left = (vr.left + vr.width - width) + 'px';
-      }
-      dragX = 0; dragStartX = 0;
-    };
-  }
-  function showToc()  { slideIn('toc');  }
-  function showTool() { slideIn('toolDiv'); }
-  function closeWithAnim(panelId) {
-    var panel = $(panelId), viewer = $('viewer');
-    if (!panel || !viewer) return;
-    var vr = viewer.getBoundingClientRect();
-    var w = panel.getBoundingClientRect().width;
-    var current = vr.left + vr.width - w;
-    var target  = vr.left + vr.width;
-    var step = 20;
-    function anim() {
-      current += step;
-      var left = current > target ? target : current;
-      panel.style.left = left + 'px';
-      if (left < target) requestAnimationFrame(anim);
-      else panel.style.display = 'none';
-    }
-    requestAnimationFrame(anim);
-  }
-  function closeToc()  { closeWithAnim('toc'); }
-  function closeTool() { closeWithAnim('toolDiv'); }
-
-  // ===== Build UI (same IDs your code expects) =====
-  function createElements() {
-    // TOC
-    var tocDiv = document.createElement('div'); tocDiv.id = 'toc'; tocDiv.style.display = 'none';
-    var closeTocDiv = document.createElement('div'); closeTocDiv.id = 'closeTocDiv';
-    var closeTocHead = document.createElement('div'); closeTocHead.id = 'closeToc'; closeTocHead.innerText = '目錄';
-    closeTocDiv.appendChild(closeTocHead);
-    var tocListDiv = document.createElement('div'); tocListDiv.id = 'tocList';
-    var ul = document.createElement('ul'); ul.id = 'tocItems';
-    tocListDiv.appendChild(ul);
-    tocDiv.appendChild(closeTocDiv); tocDiv.appendChild(tocListDiv);
-    document.body.appendChild(tocDiv);
-
-    // Tool button
-    var toolButton = document.createElement('div'); toolButton.id = 'toolButton';
-    var left = document.createElement('div'); left.id = 'toolBtnLeft'; left.innerText = '目\n錄';
-    var right= document.createElement('div'); right.id = 'toolBtnRight'; right.innerText = '設\n定';
-    toolButton.appendChild(left); toolButton.appendChild(right);
-    document.body.appendChild(toolButton);
-
-    // Tool panel
-    var toolDiv = document.createElement('div'); toolDiv.id = 'toolDiv'; toolDiv.style.display = 'none';
-    var closeToolDiv = document.createElement('div'); closeToolDiv.id = 'closeToolDiv';
-    var closeToolHead = document.createElement('div'); closeToolHead.id = 'closeTool'; closeToolHead.innerText = '設定';
-    closeToolDiv.appendChild(closeToolHead);
-    var toolList = document.createElement('div'); toolList.id = 'toolList';
-
-    // 行高
-    var lhWrap = document.createElement('div'); lhWrap.className = 'toolItem'; lhWrap.id = 'tool_lineHeigh_div';
-    var lhLabel = document.createElement('label'); lhLabel.innerText = '行高';
-    var lhSel = document.createElement('select'); lhSel.id = 'lineHeight';
-    ['1.3','1.5','1.75','2'].forEach(function(v){
-      var o = document.createElement('option'); o.value=v; o.text=v; if (v==='1.5') o.selected = true; lhSel.appendChild(o);
-    });
-    var lhAdj = document.createElement('div'); lhAdj.className = 'tool-adjust';
-    var lhMinus = document.createElement('button'); lhMinus.className='adjust-btn'; lhMinus.innerText='-';
-    var lhPlus  = document.createElement('button'); lhPlus.className='adjust-btn';  lhPlus.innerText='+';
-    lhAdj.appendChild(lhMinus); lhAdj.appendChild(lhPlus);
-    lhWrap.appendChild(lhLabel); lhWrap.appendChild(lhSel); lhWrap.appendChild(lhAdj);
-
-    // 字距
-    var lsWrap = document.createElement('div'); lsWrap.className='toolItem'; lsWrap.id='tool_letterSpacing_div';
-    var lsLabel = document.createElement('label'); lsLabel.innerText='字距';
-    var lsSel = document.createElement('select'); lsSel.id = 'letterSpacing';
-    ['0','0.05em','0.1em','0.2em'].forEach(function(v){
-      var o=document.createElement('option'); o.value=v; o.text=v; lsSel.appendChild(o);
-    });
-    var lsAdj = document.createElement('div'); lsAdj.className='tool-adjust';
-    var lsMinus=document.createElement('button'); lsMinus.className='adjust-btn'; lsMinus.innerText='-';
-    var lsPlus=document.createElement('button'); lsPlus.className='adjust-btn'; lsPlus.innerText='+';
-    lsAdj.appendChild(lsMinus); lsAdj.appendChild(lsPlus);
-    lsWrap.appendChild(lsLabel); lsWrap.appendChild(lsSel); lsWrap.appendChild(lsAdj);
-
-    // 字級
-    var fsWrap = document.createElement('div'); fsWrap.className='toolItem'; fsWrap.id='tool_fontSize_div';
-    var fsLabel = document.createElement('label'); fsLabel.innerText='字級';
-    var fsSel = document.createElement('select'); fsSel.id='fontSize';
-    ['90%','100%','110%','120%','130%','150%','180%','200%'].forEach(function(v){
-      var o=document.createElement('option'); o.value=v; o.text=v; if (v==='110%') o.selected=true; fsSel.appendChild(o);
-    });
-    var fsAdj=document.createElement('div'); fsAdj.className='tool-adjust';
-    var fsMinus=document.createElement('button'); fsMinus.className='adjust-btn'; fsMinus.innerText='-';
-    var fsPlus=document.createElement('button'); fsPlus.className='adjust-btn'; fsPlus.innerText='+';
-    fsAdj.appendChild(fsMinus); fsAdj.appendChild(fsPlus);
-    fsWrap.appendChild(fsLabel); fsWrap.appendChild(fsSel); fsWrap.appendChild(fsAdj);
-
-    // 主題
-    var thWrap = document.createElement('div'); thWrap.className='toolItem'; thWrap.id='tool_theme_div';
-    var thLabel = document.createElement('label'); thLabel.innerText='主題';
-    var thDiv = document.createElement('div');
-    [
-      { id:'light', value:'light', text:'亮色', checked:true },
-      { id:'mi',    value:'mi',    text:'米黃' },
-      { id:'dark',  value:'dark',  text:'暗色' }
-    ].forEach(function(t){
-      var node = document.createElement('div');
-      var r = document.createElement('input'); r.type='radio'; r.name='theme'; r.id=t.id; r.value=t.value; if (t.checked) r.checked=true;
-      var l = document.createElement('label'); l.htmlFor=t.id; l.innerText=t.text;
-      node.appendChild(r); node.appendChild(l); thDiv.appendChild(node);
-    });
-    thWrap.appendChild(thLabel); thWrap.appendChild(thDiv);
-
-    // 版面
-    var loWrap = document.createElement('div'); loWrap.className='toolItem';
-    var loLabel = document.createElement('label'); loLabel.innerText='版面';
-    var loDiv = document.createElement('div');
-    [
-      { id:'auto', value:'auto', text:'自動', checked:true },
-      { id:'none', value:'none', text:'單頁' },
-      { id:'both', value:'both', text:'跨頁' }
-    ].forEach(function(x){
-      var node=document.createElement('div');
-      var r=document.createElement('input'); r.type='radio'; r.name='layout'; r.id=x.id; r.value=x.value; if (x.checked) r.checked=true;
-      var l=document.createElement('label'); l.htmlFor=x.id; l.innerText=x.text;
-      node.appendChild(r); node.appendChild(l); loDiv.appendChild(node);
-    });
-    loWrap.appendChild(loLabel); loWrap.appendChild(loDiv);
-
-    toolList.appendChild(thWrap);
-    toolList.appendChild(lhWrap);
-    toolList.appendChild(lsWrap);
-    toolList.appendChild(fsWrap);
-    toolList.appendChild(loWrap);
-    toolDiv.appendChild(closeToolDiv);
-    toolDiv.appendChild(toolList);
-    document.body.appendChild(toolDiv);
-
-    // Viewer click layer
-    var ve = document.createElement('div'); ve.id='viewer_event'; ve.innerText=''; ve.style.display='none';
-    document.body.appendChild(ve);
-  }
-
-  // ===== Core start =====
-  function start(containerId, bookUrl) {
-    var layoutRadio = document.querySelector('input[name="layout"]:checked');
-    var layout = layoutRadio ? layoutRadio.value : 'auto';
-
-    book = ePub(bookUrl);
-    book.ready.then(function () {
-      var pack = book.package || {};
-      pageProgressionDirection = pack.metadata ? pack.metadata['direction'] : undefined;
-
-      var fixed = isFixedLayout(book);
-      rendition = book.renderTo(containerId, { spread: layout, width: '100%', height: '100%' });
-
-      if (fixed) {
-        ['tool_theme_div','tool_lineHeigh_div','tool_letterSpacing_div','tool_fontSize_div']
-          .forEach(function (id) { var el = $(id); if (el) el.style.display = 'none'; });
-      }
-
-      // themes
-      rendition.themes.register('dark',  { body: { color: 'white',  'background-color': 'black' }});
-      rendition.themes.register('light', { body: { color: 'black',  'background-color': 'white' }});
-      rendition.themes.register('mi',    { body: { color: 'black',  'background-color': 'Beige' }});
-
-      // sync saved prefs -> UI
-      (function () {
-        var p = loadPrefs();
-        try {
-          if (p.theme) { var r = document.querySelector('input[name="theme"][value="'+p.theme+'"]'); if (r) r.checked = true; }
-          if (p.layout){ var r2= document.querySelector('input[name="layout"][value="'+p.layout+'"]'); if (r2) r2.checked = true; }
-          if (p.fontSize) { var fs = $('fontSize'); if (fs) fs.value = p.fontSize; }
-          if (p.lineHeight) { var lh = $('lineHeight'); if (lh) lh.value = p.lineHeight; }
-          if (p.letterSpacing) { var ls = $('letterSpacing'); if (ls) ls.value = p.letterSpacing; }
-        } catch (e) {}
-      })();
-
-      // apply UI -> rendition
-      changeFontSize(); changeTheme(); changeLetterSpacing(); changeLineHeight();
-      setupTool();
-
-      var disp = cfiString ? rendition.display(cfiString) : rendition.display();
-      disp.finally(function () { isRendering = false; });
-
-      rendition.on('rendered', function () {
-        try {
-          var loc = rendition.currentLocation();
-          if (loc && loc.start && loc.start.cfi) cfiString = loc.start.cfi;
-        } catch (e) {}
-      });
-    }).catch(function (e) {
-      console.error('Book loading failed:', e);
-    });
-
-    if (!window.isLoadToc) {
-      window.isLoadToc = true;
-      loadToc();
-    }
-  }
-
-  function loadToc() {
-    var list = $('tocItems'); if (!list) return;
-    if (book && book.navigation && Array.isArray(book.navigation.toc)) {
-      book.navigation.toc.forEach(function (item) { createTocItem(list, item); });
-    } else if (book && book.loaded && book.loaded.navigation) {
-      book.loaded.navigation.then(function (toc) {
-        if (toc && Array.isArray(toc.toc)) toc.toc.forEach(function (item) { createTocItem(list, item); });
-      }).catch(function (e) { console.error(e); });
-    }
-  }
-
-  // ===== Appearance changes =====
-  function changeFontSize() {
-    if (!rendition) return;
-    var sel = $('fontSize'); if (!sel) return;
-    var val = sel.value;
-    rendition.themes.fontSize(val);
-    savePrefs({ fontSize: val });
-  }
-  function changeTheme() {
-    if (!rendition) return;
-    var r = document.querySelector('input[name="theme"]:checked');
-    var theme = r ? r.value : 'light';
-    var btn = $('toolButton');
-    if (btn) btn.style.color = (theme === 'dark' ? 'white' : 'black');
-    rendition.themes.select(theme);
-    savePrefs({ theme: theme });
-  }
-  function changeLineHeight() {
-    if (!rendition) return;
-    var sel = $('lineHeight'); if (!sel) return;
-    var val = sel.value;
-    rendition.themes.default({ '*': { 'line-height': val } });
-    rendition.themes.update('default');
-    savePrefs({ lineHeight: val });
-  }
-  function changeLetterSpacing() {
-    if (!rendition) return;
-    var sel = $('letterSpacing'); if (!sel) return;
-    var val = sel.value;
-    rendition.themes.default({ 'body': { 'letter-spacing': val } });
-    rendition.themes.update('default');
-    savePrefs({ letterSpacing: val });
-  }
-  function changeLayout() {
-    var r = document.querySelector('input[name="layout"]:checked');
-    var layout = r ? r.value : 'auto';
-    savePrefs({ layout: layout });
-    var viewer = $('viewer'); if (viewer) viewer.innerHTML = '';
-    // 依你的結構重新啟動（你原本就是這條路徑）
-    start('viewer', 'book2/item/standard.opf');
-  }
-
-  // ===== Navigation =====
-  function goToPreviousPage() {
-    if (!rendition || isRendering) return;
-    isRendering = true;
-    rendition.prev().finally(function () {
-      try { cfiString = rendition.currentLocation().start.cfi; } catch (e) {}
-      isRendering = false;
-    });
-  }
-  function goToNextPage() {
-    if (!rendition || isRendering) return;
-    isRendering = true;
-    rendition.next().finally(function () {
-      try { cfiString = rendition.currentLocation().start.cfi; } catch (e) {}
-      isRendering = false;
-    });
-  }
-
-  // ===== Select stepper =====
-  function adjustSelect(selectId, direction) {
-    var sel = $(selectId); if (!sel) return;
-    var opts = Array.prototype.map.call(sel.options, function (o) { return o.value; });
-    var idx = Math.max(0, opts.indexOf(sel.value));
-    var n = Math.min(Math.max(0, idx + direction), opts.length - 1);
-    sel.value = opts[n];
-    sel.dispatchEvent(new Event('change'));
-  }
-
-  // ===== Init & Events =====
-  function init(containerId, bookUrl) {
-    createElements();
-    setupEventListeners();
-    start(containerId, bookUrl);
-  }
-
-  function setupEventListeners() {
-    var setupBtn = $('setup_button'); if (setupBtn) setupBtn.addEventListener('click', showTool);
-    var tocBtn = $('show_toc'); if (tocBtn) tocBtn.addEventListener('click', showToc);
-    var cT = $('closeToc'); if (cT) cT.addEventListener('click', closeToc);
-    var cU = $('closeTool'); if (cU) cU.addEventListener('click', closeTool);
-
-    document.querySelectorAll('input[name="layout"]').forEach(function (i) { i.addEventListener('change', changeLayout); });
-    document.querySelectorAll('input[name="theme"]').forEach(function (i) { i.addEventListener('change', changeTheme); });
-    var lh = $('lineHeight'); if (lh) lh.addEventListener('change', changeLineHeight);
-    var ls = $('letterSpacing'); if (ls) ls.addEventListener('change', changeLetterSpacing);
-    var fs = $('fontSize'); if (fs) fs.addEventListener('change', changeFontSize);
-
-    document.addEventListener('click', function (e) {
-      var ve = $('viewer_event');
-      if (!ve || e.target !== ve) return;
-      e.stopPropagation();
-
-      var toolDiv = $('toolDiv'), toc = $('toc');
-      if (toolDiv && toolDiv.style.display !== 'none') { closeTool(); return; }
-      if (toc && toc.style.display !== 'none') { closeToc(); return; }
-
-      var rect = ve.getBoundingClientRect();
-      var rightSide = e.clientX > (rect.left + rect.width / 2);
-      var rtl = (pageProgressionDirection === 'rtl');
-      if (rightSide) { rtl ? goToPreviousPage() : goToNextPage(); }
-      else { rtl ? goToNextPage() : goToPreviousPage(); }
-    });
-
-    document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-
-    document.addEventListener('keydown', function (event) {
-      var tag = (event.target && event.target.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
-
-      if (event.key === 'ArrowLeft') {
-        (pageProgressionDirection === 'rtl') ? goToNextPage() : goToPreviousPage();
-        event.preventDefault();
-      } else if (event.key === 'ArrowRight') {
-        (pageProgressionDirection === 'rtl') ? goToPreviousPage() : goToNextPage();
-        event.preventDefault();
-      } else if ((event.ctrlKey || event.metaKey) && (event.key === '+' || event.key === '=')) {
-        var selUp = $('fontSize');
-        if (selUp) {
-          var opts = Array.prototype.map.call(selUp.options, function (o) { return o.value; });
-          var idx = Math.max(0, opts.indexOf(selUp.value));
-          if (idx < opts.length - 1) { selUp.value = opts[idx + 1]; changeFontSize(); }
+    
+    function changeTheme() {
+        var theme = document.querySelector('input[name="theme"]:checked').value;
+        var toolButton = document.getElementById("toolButton");
+        
+        if (toolButton) {
+            if (theme === 'dark') {
+                toolButton.style.color = "white";
+            } else {
+                toolButton.style.color = "black";
+            }
         }
-        event.preventDefault();
-      } else if ((event.ctrlKey || event.metaKey) && event.key === '-') {
-        var selDn = $('fontSize');
-        if (selDn) {
-          var opts2 = Array.prototype.map.call(selDn.options, function (o) { return o.value; });
-          var idx2 = Math.max(0, opts2.indexOf(selDn.value));
-          if (idx2 > 0) { selDn.value = opts2[idx2 - 1]; changeFontSize(); }
+
+        rendition.themes.select(theme);
+    }
+
+    function changeLetterSpacing() {
+        var selectedLetterSpacing = document.getElementById("letterSpacing").value;
+        rendition.themes.default({
+            "body": {
+                "letter-spacing": selectedLetterSpacing,
+            }
+        });
+        rendition.themes.update('default');
+    }
+
+    function changeLineHeight() {
+        var selectedLineHeight = document.getElementById("lineHeight").value;
+        rendition.themes.default({
+            "*": {
+                "line-height": selectedLineHeight,
+            }
+        });
+        rendition.themes.update('default');
+    }
+
+    function goToPreviousPage() {
+        if (isRendering){
+			 return;
+		} // Added: Check rendering state
+        isRendering = true;
+        rendition.prev().then(() => {
+            cfiString = rendition.currentLocation().start.cfi;
+            isRendering = false;
+        }).catch(() => {
+            isRendering = false;
+        });
+    }
+
+    function goToNextPage() {
+        if (isRendering){
+			 return;
+		} // Added: Check rendering state
+        isRendering = true;
+        rendition.next().then(() => {
+            cfiString = rendition.currentLocation().start.cfi;
+            isRendering = false;
+        }).catch(() => {
+            isRendering = false;
+        });
+    }
+
+    var isLoadToc = false;
+
+    function showToc() {
+        const toolDiv = document.getElementById("toolDiv");
+        if (toolDiv && toolDiv.style.display !== "none") {
+            closeTool();
         }
-        event.preventDefault();
-      }
-    });
+        
+        var tocDiv = document.getElementById("toc");
+        if (tocDiv && tocDiv.style.display !== "none") {
+            closeToc();
+            return;
+        }
+        tocDiv.style.display = "block";
+        if(false == isLoadToc) {
+            loadToc();
+        }
+    }
 
-    document.addEventListener('keypress', function (event) {
-      var tag = (event.target && event.target.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
-      event.preventDefault();
-    });
+    function closeToc() {
+        var tocDiv = document.getElementById("toc");
+        tocDiv.style.display = "none";
+    }
 
-    window.addEventListener('resize', setupTool, { passive: true });
-    window.addEventListener('scroll', setupTool, { passive: true });
-  }
+    function showTool() {
+        const toc = document.getElementById("toc");
+        if (toc && toc.style.display !== "none") {
+            closeToc();
+        }
+        
+        var toolDiv = document.getElementById("toolDiv");
+        if (toolDiv && toolDiv.style.display !== "none") {
+            closeTool();
+            return;
+        }
+        toolDiv.style.display = "block";
+    }
 
-  // ===== Public API =====
-  window.EPUBReader = { init: init };
+    function closeTool() {
+        var toolDiv = document.getElementById("toolDiv");
+        toolDiv.style.display = "none";
+    }
 
-  // ===== Signal Ready =====
-  (function signalReady() {
-    function fire() { document.dispatchEvent(new Event('EPUBReaderReady')); }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fire, { once: true });
-    else setTimeout(fire, 0);
-  })();
+    function loadToc() {
+        isLoadToc = true;
+        
+        var tocDiv = document.getElementById("toc");
+        var viewerDiv = document.getElementById("viewer");
 
+        var viewerRect = viewerDiv.getBoundingClientRect();
+
+        tocDiv.style.top = viewerRect.top + "px";
+        tocDiv.style.left = viewerRect.left + "px";
+        tocDiv.style.height = (viewerRect.height -30) + "px";
+        tocDiv.style.width = (viewerRect.width / 2) + "px";
+
+        var tocList = document.getElementById("tocList");
+        tocList.innerHTML = '';
+        
+        book.loaded.navigation.then(function(toc) {
+            function createTocItem(chapter, level) {
+                var li = document.createElement("li");
+                var button = document.createElement("button");
+                button.innerHTML = chapter.label;
+                button.onclick = function() {
+                    rendition.display(chapter.href);
+                    closeToc();
+                };
+
+                li.style.paddingLeft = (level * 20) + "px";
+
+                li.appendChild(button);
+                tocList.appendChild(li);
+
+                if (chapter.subitems) {
+                    var subList = document.createElement("ul");
+                    chapter.subitems.forEach(function(subitem) {
+                        createTocItem(subitem, level + 1);
+                    });
+                    li.appendChild(subList);
+                }
+            }
+
+            toc.forEach(function(chapter) {
+                createTocItem(chapter, 0);
+            });
+        });
+    }
+
+    function adjustSelect(selectId, direction) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+
+        const options = Array.from(select.options);
+        const currentIndex = select.selectedIndex;
+
+        const newIndex = currentIndex + direction;
+
+        if (newIndex >= 0 && newIndex < options.length) {
+            select.selectedIndex = newIndex;
+            select.dispatchEvent(new Event('change'));
+        }
+    }
+
+
+    function createElements() {
+        // Create toolButton
+        const toolButton = document.createElement('div');
+        toolButton.id = 'toolButton';
+        toolButton.innerHTML = `
+            <a id="setup_button">&nbsp;⚙</a>
+            <a id="show_toc">▥</a>
+        `;
+        document.body.appendChild(toolButton);
+
+        // Create toc
+        const toc = document.createElement('div');
+        toc.id = 'toc';
+        toc.style.display = 'none';
+        toc.innerHTML = `
+            <button id="closeToc">×</button>
+            <h3>目錄</h3>
+            <ul id="tocList"></ul>
+        `;
+        document.body.appendChild(toc);
+
+        // Create toolDiv
+        const toolDiv = document.createElement('div');
+        toolDiv.id = 'toolDiv';
+        toolDiv.style.display = 'none';
+        toolDiv.innerHTML = `
+            <button id="closeTool">×</button>
+            
+            <h3>樣式調整</h3>
+            <div id="tool_layout_div">
+                <label for="layout">版式</label>
+                <label>
+                    <input type="radio" name="layout" value="auto" checked> 自動
+                </label>
+                <label>
+                    <input type="radio" name="layout" value="none"> 單欄
+                </label>
+                <label>
+                    <input type="radio" name="layout" value="always"> 雙欄
+                </label>
+            </div>
+            
+            <div id="tool_theme_div">
+                <label for="theme">背景色</label>
+                <label>
+                    <input type="radio" name="theme" value="light" checked> 白色
+                </label>
+                <label>
+                    <input type="radio" name="theme" value="mi"> 米色
+                </label>
+                <label>
+                    <input type="radio" name="theme" value="dark"> 黑暗
+                </label>
+            </div>
+            <div id="tool_lineHeigh_div">
+                <label for="lineHeight">行距</label>
+                <button class="adjust-btn">-</button>
+                <select id="lineHeight">
+                    <option value="unset">預設</option>
+                    <option value="1">1</option>
+                    <option value="1.5">1.5</option>
+                    <option value="2">2</option>
+                </select>
+                <button class="adjust-btn">+</button>
+            </div>
+            <div id="tool_letterSpacing_div">
+                <label for="letterSpacing">字距</label>
+                <button class="adjust-btn">-</button>
+                <select id="letterSpacing">
+                    <option value="unset" selected>預設</option>
+                    <option value="0.1em">0.1em</option>
+                    <option value="0.2em">0.2em</option>
+                    <option value="0.3em">0.3em</option>
+                    <option value="0.4em">0.4em</option>
+                    <option value="0.5em">0.5em</option>
+                </select>
+                <button class="adjust-btn">+</button>
+            </div>
+            <div id="tool_fontSize_div">
+                <label for="fontSize">文字大小</label>
+                <button class="adjust-btn">-</button>
+                <select id="fontSize">
+                    <option value="unset" selected>預設</option>
+                    <option value="16px">16px</option>
+                    <option value="18px">18px</option>
+                    <option value="20px">20px</option>
+                    <option value="22px">22px</option>
+                    <option value="24px">24px</option>
+                    <option value="26px">26px</option>
+                    <option value="28px">28px</option>
+                    <option value="30px">30px</option>
+                </select>
+                <button class="adjust-btn">+</button>
+            </div>
+        `;
+        document.body.appendChild(toolDiv);
+
+        // Create viewer_event
+        const viewerEvent = document.createElement('div');
+        viewerEvent.id = 'viewer_event';
+        document.body.appendChild(viewerEvent);
+    }
+
+    function init(containerId, bookUrl) {
+        createElements();
+        document.addEventListener('DOMContentLoaded', function() {
+            start(containerId, bookUrl);
+            setupEventListeners();
+        });
+    }
+
+    function setupEventListeners() {
+        document.getElementById('setup_button').addEventListener('click', showTool);
+        document.getElementById('show_toc').addEventListener('click', showToc);
+        document.getElementById('closeToc').addEventListener('click', closeToc);
+        document.getElementById('closeTool').addEventListener('click', closeTool);
+
+        document.querySelectorAll('input[name="layout"]').forEach(input => {
+            input.addEventListener('change', changeLayout);
+        });
+        document.querySelectorAll('input[name="theme"]').forEach(input => {
+            input.addEventListener('change', changeTheme);
+        });
+        document.getElementById('lineHeight').addEventListener('change', changeLineHeight);
+        document.getElementById('letterSpacing').addEventListener('change', changeLetterSpacing);
+        document.getElementById('fontSize').addEventListener('change', changeFontSize);
+
+        document.querySelectorAll('.adjust-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const selectId = this.parentElement.querySelector('select').id;
+                const direction = this.textContent === '+' ? 1 : -1;
+                adjustSelect(selectId, direction);
+            });
+        });
+
+        var viewerEvent = document.getElementById("viewer_event");
+        viewerEvent.addEventListener("click", function(event) {
+            event.stopPropagation();
+
+            var toolDiv = document.getElementById("toolDiv");
+            var toc = document.getElementById("toc");
+            if (toolDiv && toolDiv.style.display !== "none") {
+                closeTool();
+                return;
+            }
+
+            if (toc && toc.style.display !== "none") {
+                closeToc();
+                return;
+            }
+
+            var viewer = event.currentTarget;
+            var rect = viewer.getBoundingClientRect();
+            var clickX = event.clientX;
+
+            if (clickX > rect.left + rect.width / 2) {
+                if(pageProgressionDirection) {
+                    if(pageProgressionDirection == 'ltr') {
+                        goToNextPage();
+                    } else if(pageProgressionDirection == 'rtl') {
+                        goToPreviousPage();
+                    }
+                } else {
+                    goToNextPage();
+                }
+            } else {
+                if(pageProgressionDirection) {
+                    if(pageProgressionDirection == 'ltr') {
+                        goToPreviousPage();
+                    } else if(pageProgressionDirection == 'rtl') {
+                        goToNextPage();
+                    }
+                } else {
+                    goToPreviousPage();
+                }
+            }
+        });
+
+        let startX = 0, startY = 0, endX = 0, endY = 0;
+
+        viewerEvent.addEventListener("touchstart", function(event) {
+            const touch = event.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+        });
+
+        viewerEvent.addEventListener("touchend", function(event) {
+            const toolDiv = document.getElementById("toolDiv");
+            const toc = document.getElementById("toc");
+
+            if (toolDiv && toolDiv.style.display !== "none") {
+                return;
+            }
+
+            if (toc && toc.style.display !== "none") {
+                return;
+            }
+
+            const touch = event.changedTouches[0];
+            endX = touch.clientX;
+            endY = touch.clientY;
+
+            const diffX = endX - startX;
+            const diffY = endY - startY;
+
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 200) {
+                if (diffX > 0) {
+                    if(pageProgressionDirection) {
+                        if(pageProgressionDirection == 'ltr') {
+                            goToNextPage();
+                        } else if(pageProgressionDirection == 'rtl') {
+                            goToPreviousPage();
+                        }
+                    } else {
+                        goToNextPage();
+                    }
+                } else {
+                    if(pageProgressionDirection) {
+                        if(pageProgressionDirection == 'ltr') {
+                            goToPreviousPage();
+                        } else if(pageProgressionDirection == 'rtl') {
+                            goToNextPage();
+                        }
+                    } else {
+                        goToPreviousPage();
+                    }
+                }
+            }
+        });
+
+        document.addEventListener("contextmenu", function (event) {
+            event.preventDefault();
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "ArrowLeft") {
+                goToPreviousPage();
+                event.preventDefault();
+            } else if (event.key === "ArrowRight") {
+                goToNextPage();
+                event.preventDefault();
+            } else {
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener("mousedown", function (event) {
+            if (event.button !== 0 && event.button !== 2) {
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener("keypress", function (event) {
+            event.preventDefault();
+        });
+    }
+
+    window.EPUBReader = {
+        init: init
+    };
 })();
+

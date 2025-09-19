@@ -94,7 +94,7 @@ body {
 }
 
 /* Toggle sidebar visible */
-/* (Removed empty rule set for .toc--open + .reader) */
+/* Removed empty rule set for .toc--open + .reader */
 .main.sidebar-open {
   grid-template-columns: 320px 1fr;
 }
@@ -184,4 +184,42 @@ body {
 }
 
 /* Better text defaults inside content (reflow) */
+.viewer{ display:flex; align-items:flex-start; justify-content:center; }
+
+/* v9: header height is dynamic; tools can wrap/scroll; desktop locks TOC open */
+
+.appbar{flex-wrap:wrap; align-items:center; gap:8px; padding:6px 12px;}
+.tools{display:flex; gap:12px; flex-wrap:wrap; max-width:100%; overflow-x:auto;}
+
+/* Make main area use dynamic appbar height set from JS */
+:root { --appbar-h: 56px; }
+.main{ height: calc(100vh - var(--appbar-h)); }
+
+/* Desktop: keep TOC open and not closable */
+@media (min-width: 1024px){
+  .main{ grid-template-columns: 320px 1fr; }
+  .toc{ position:relative; transform:none !important; box-shadow:none !important; }
+  .toc .icon-btn#btnCloseToc{ display:none; }
+  .icon-btn#btnToc{ display:none; }
+}
+
+/* Mobile/Tablet: overlay TOC */
+@media (max-width: 1023.98px){
+  .main{ grid-template-columns: 1fr; }
+  .toc{
+    position:absolute; inset:0 auto 0 0; width:min(82vw, 320px);
+    transform:translateX(-100%); transition:transform .2s ease;
+    background:#fff; border-right:1px solid #e5e7eb; z-index:30;
+    box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  }
+  .sidebar-open .toc{ transform:translateX(0); }
+}
+
+@media (max-width: 640px){
+  .tools .group{ gap:4px }
+  .select{ height:30px; font-size:13px }
+  .icon-btn{ height:30px; }
+}
+
+/* Center viewer content */
 .viewer{ display:flex; align-items:flex-start; justify-content:center; }

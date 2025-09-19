@@ -181,6 +181,22 @@
 
   document.addEventListener("DOMContentLoaded", init, { once: true });
 
+  // v9: observe header height and write to CSS var so main area is correctly sized on mobile
+  function updateAppbarHeightVar(){
+    try{
+      const h = document.querySelector('.appbar')?.offsetHeight || 56;
+      document.documentElement.style.setProperty('--appbar-h', h + 'px');
+    }catch(e){}
+  }
+  updateAppbarHeightVar();
+  if (window.ResizeObserver){
+    const ro = new ResizeObserver(updateAppbarHeightVar);
+    const appbar = document.querySelector('.appbar');
+    if (appbar) ro.observe(appbar);
+  }
+  window.addEventListener('resize', updateAppbarHeightVar);
+
+
   async function init() {
     // EPUB 在父資料夾
     
@@ -224,6 +240,19 @@
     });
 
     registerThemes();
+
+  function isDesktop(){ return window.innerWidth >= 1024; }
+  function forceDesktopToc(){
+    if (isDesktop()){
+      try{
+        tocPanel.removeAttribute('hidden');
+        main.classList.add('sidebar-open');
+      }catch(e){}
+    }
+  }
+  forceDesktopToc();
+  window.addEventListener('resize', forceDesktopToc);
+
     await rendition.display();
 
     // Force TOC open on first load (temp workaround)
@@ -367,6 +396,7 @@ window.addEventListener("resize", maybeFixLayout);
 
   }
   function closeToc() {
+  if (window.innerWidth >= 1024) { return; }
     tocPanel.setAttribute("hidden", "");
     main.classList.remove("sidebar-open");
 

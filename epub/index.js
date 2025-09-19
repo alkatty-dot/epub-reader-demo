@@ -1,7 +1,3 @@
-/* EPUB Reader UI + Logic
- * EPUB 檔案放在 ../外公睡著了.epub （父資料夾）
- */
-
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
 
@@ -42,12 +38,21 @@
     return md.layout === 'pre-paginated' || md.fixed_layout === true;
   }
 
+  
+  function autoMapSpread() {
+    const w = document.getElementById('viewer').clientWidth || 0;
+    const isFXL = detectFXL();
+    // Heuristic: wide screens show both, narrow single
+    if (isFXL) return (w >= 900 ? 'both' : 'none');
+    return (w >= 900 ? 'both' : 'none'); // for reflow paginated as well
+  }
+
   function applyLayoutByMode(mode) {
     // mode: 'none' | 'auto' | 'both'  (UI semantics)
     // for reflow: keep paginated, spread depends on mode
     // for FXL: force paginated; 'auto' -> 'both' (對頁), 'none' -> 'none'
     const isFXL = detectFXL();
-    let spreadMode = mode;
+    let spreadMode = (mode==='auto') ? autoMapSpread() : mode;
     if (isFXL) {
       rendition.flow('paginated');
       if (mode === 'auto') spreadMode = 'both'; // FXL 預設對頁顯示
@@ -184,6 +189,13 @@
 
     registerThemes();
     await rendition.display();
+
+    // Force TOC open on first load (temp workaround)
+    try{
+      tocPanel.removeAttribute('hidden');
+      main.classList.add('sidebar-open');
+    }catch(e){}
+
 await ensureVisible();
 
     // Choose flow after package is loaded: reflow -> paginated; fixed-layout -> scrolled-doc
@@ -230,6 +242,26 @@ maybeFixLayout();
 
     wireControls();
     window.addEventListener("resize", handleResize);
+window.addEventListener('resize', () => { 
+    // If UI is on 'auto', recompute spread
+    if (document.getElementById('spreadSelect')?.value === 'auto'){
+      applyLayoutByMode('auto');
+    }
+});
+
+  // ---- Auto resize when #viewer size changes (sidebar toggle, window resize, etc.) ----
+  const viewerEl = document.getElementById('viewer');
+  if (window.ResizeObserver && viewerEl){
+    const ro = new ResizeObserver(() => {
+      try {
+        const loc = rendition.currentLocation();
+        rendition.resize(viewerEl.clientWidth, viewerEl.clientHeight);
+        if (loc) rendition.display(loc.start.cfi);
+      } catch(e){}
+    });
+    ro.observe(viewerEl);
+  }
+
 window.addEventListener("resize", maybeFixLayout);
     document.addEventListener("keydown", onKeydown);
   }
@@ -288,10 +320,26 @@ window.addEventListener("resize", maybeFixLayout);
   function openToc() {
     tocPanel.removeAttribute("hidden");
     main.classList.add("sidebar-open");
+
+    // re-apply after sidebar transition
+    setTimeout(() => { 
+      const loc = rendition.currentLocation();
+      if (loc) rendition.display(loc.start.cfi);
+      relayout();
+    }, 50);
+
   }
   function closeToc() {
     tocPanel.setAttribute("hidden", "");
     main.classList.remove("sidebar-open");
+
+    // re-apply after sidebar transition
+    setTimeout(() => { 
+      const loc = rendition.currentLocation();
+      if (loc) rendition.display(loc.start.cfi);
+      relayout();
+    }, 50);
+
   }
 
   function onKeydown(e) {

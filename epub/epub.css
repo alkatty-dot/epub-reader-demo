@@ -94,7 +94,6 @@ body {
 }
 
 /* Toggle sidebar visible */
-/* Removed empty rule set for .toc--open+.reader */
 .main.sidebar-open {
   grid-template-columns: 320px 1fr;
 }

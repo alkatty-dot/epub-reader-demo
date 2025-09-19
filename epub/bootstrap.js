@@ -1,62 +1,101 @@
-// bootstrap.js（保留父層結構；優先吃 index.html/父層腳本提供的書檔）
+// bootstrap.js (穩定版：保留父層結構，修正路徑/中文檔名/父子層相對定位)
 (function () {
-  function qs(id){ return document.getElementById(id); }
+  function $(id){ return document.getElementById(id); }
 
-  // 盡量從你既有的父層腳本/頁面取書檔，再退回 URL 參數，最後才用父層預設相對路徑
-  function resolveBookUrl(){
-    // 1) 你的父層腳本可能丟進來的常見寫法（任選其一即可命中）
+  // 對最後一段做安全編碼，但避免重複編碼
+  function safeEncodeLastSegment(p){
+    try {
+      const u = new URL(p, document.baseURI); // 統一處理 ./ ../ 結構
+      return u.href; // 如果是完整 URL 直接回傳
+    } catch(_) {
+      // 非 URL => 視為相對路徑
+      const parts = p.split('/');
+      if (parts.length === 0) return p;
+      const last = parts.pop();
+      let decoded = last;
+      try { decoded = decodeURIComponent(last); } catch(_) {}
+      const reencoded = encodeURIComponent(decoded);
+      parts.push(reencoded);
+      return parts.join('/');
+    }
+  }
+
+  function resolveBookFromParent(){
+    // 你既有父層提供的多種可能
     if (typeof window.getBookUrl === 'function') {
       try { const u = window.getBookUrl(); if (u) return u; } catch(_) {}
     }
     if (window.BOOK_URL) return window.BOOK_URL;
     if (window.bookUrl)  return window.bookUrl;
     if (window.__EPUB__ && window.__EPUB__.url) return window.__EPUB__.url;
+    return null;
+  }
 
-    // 2) URL 參數 ?book=...
+  function resolveBookUrl(){
+    // 1) 先吃父層
+    let candidate = resolveBookFromParent();
+
+    // 2) 再吃 ?book=
+    if (!candidate) {
+      try {
+        const qs = new URL(window.location.href).searchParams.get('book');
+        if (qs) candidate = qs;
+      } catch(_) {}
+    }
+
+    // 3) 都沒有 => 你的慣例：父層預設檔名
+    if (!candidate) candidate = '../外公睡著了.epub';
+
+    // ★關鍵：若父層只給純檔名（不含斜線），而你的書確實放在父層，幫你自動補 ../
+    if (!/[/\\]/.test(candidate)) {
+      candidate = '../' + candidate;
+    }
+
+    // 把相對路徑「正規化成絕對URL」，並處理中文檔名
     try {
-      const u = new URL(window.location.href).searchParams.get('book');
-      if (u) return u;
-    } catch (_) {}
-
-    // 3) 最後退回：父資料夾的預設檔名（依你現在的放置方式）
-    return '../外公睡著了.epub';
+      const abs = new URL(candidate, document.baseURI).href;
+      return safeEncodeLastSegment(abs);
+    } catch(_) {
+      // 萬一瀏覽器不支援 URL（理論上都支援），退回原字串的末段編碼
+      return safeEncodeLastSegment(candidate);
+    }
   }
 
   function ensureOverlay(){
-    const viewer = qs('viewer');
+    const viewer = $('viewer');
     if (!viewer) return;
-    let overlay = document.getElementById('viewer_event');
+    let overlay = $('viewer_event');
     if (!overlay){
       overlay = document.createElement('div');
       overlay.id = 'viewer_event';
       overlay.className = 'viewer-event';
-      // 給 index.js 綁手勢用
       viewer.appendChild(overlay);
     }
   }
 
-  // 等待 epub.min.js 與 index.js 都載好，且 EPUBReader.init 可用
   function whenReady(cb){
-    const start = Date.now();
-    (function tick(){
-      const readyDOM = (document.readyState === 'complete' || document.readyState === 'interactive');
-      const readyAPI = (window.EPUBReader && typeof window.EPUBReader.init === 'function');
-      if (readyDOM && readyAPI) return cb();
-      if (Date.now() - start > 8000) return cb(); // 最長等 8 秒，避免卡死
-      setTimeout(tick, 50);
+    const t0 = Date.now();
+    (function wait(){
+      const domReady = (document.readyState === 'complete' || document.readyState === 'interactive');
+      const apiReady = (window.EPUBReader && typeof window.EPUBReader.init === 'function');
+      if (domReady && apiReady) return cb();
+      if (Date.now() - t0 > 8000) return cb(); // 最長等 8 秒
+      setTimeout(wait, 50);
     })();
   }
 
   function boot(){
     ensureOverlay();
     const bookUrl = resolveBookUrl();
+    // 方便你在 Console 直接看到實際要抓的最終 URL
+    console.log('[EPUB] resolved book URL =>', bookUrl);
     try {
-      // 直接呼叫你現成的初始化
       window.EPUBReader.init('viewer', bookUrl);
     } catch (e) {
       console.error('EPUBReader.init 失敗：', e);
     }
   }
 
-  whenReady(boot);
+  if (document.readyState === 'complete' || document.readyState === 'interactive') whenReady(boot);
+  else document.addEventListener('DOMContentLoaded', function(){ whenReady(boot); }, {once:true});
 })();

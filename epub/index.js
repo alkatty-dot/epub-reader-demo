@@ -36,7 +36,24 @@
         book.destroy();
         start("viewer", "book2/item/standard.opf");
     }
+	
+// 進入載入狀態（淡化+待會淡入）
+document.documentElement.classList.add('is-loading');
 
+// 當 ePub 載入完成後，移除載入狀態並做一次淡入
+try {
+  book.ready.then(() => {
+    document.documentElement.classList.remove('is-loading');
+    const v = document.getElementById('viewer');
+    if (v) {
+      v.classList.remove('viewer-fade-in');
+      // 重新觸發一次 class 以便反覆開書也能看到淡入
+      void v.offsetWidth;
+      v.classList.add('viewer-fade-in');
+    }
+  });
+} catch (_) {}
+	
     function start(containerId, bookUrl) {
         var layout = document.querySelector('input[name="layout"]:checked').value;
         
@@ -76,7 +93,21 @@
             changeLetterSpacing();
             changeLineHeight();
             setupTool();
-            
+
+function applyThemeDataAttribute(themeValue) {
+  const root = document.documentElement;
+  // light / mi / dark 三種，預設 light
+  root.setAttribute('data-theme', themeValue || 'light');
+}
+
+// 初始：沿用你現有的預選邏輯，並同步 data-theme
+(() => {
+  try {
+    const checked = document.querySelector('input[name="theme"]:checked');
+    applyThemeDataAttribute(checked ? checked.value : 'light');
+  } catch (_) {}
+})();
+			
             if(cfiString) {
                 rendition.display(cfiString).then(() => { // Added: Handle display promise
                     isRendering = false;

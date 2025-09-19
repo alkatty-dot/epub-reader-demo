@@ -99,7 +99,8 @@
   document.addEventListener("DOMContentLoaded", init, { once: true });
 
   async function init() {
-   
+    // EPUB 在父資料夾
+    
     // ---- Resolve book path from URL or global selected_book (set by ../get_data.js) ----
     function getQueryParam(name) {
       const p = new URLSearchParams(window.location.search);
@@ -142,9 +143,26 @@
     registerThemes();
     await rendition.display();
 
+    // Choose flow after package is loaded: reflow -> paginated; fixed-layout -> scrolled-doc
+    async function autoChooseFlow() {
+      try {
+        await book.ready;
+        const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
+        if (isFXL) {
+          rendition.flow("scrolled-doc");
+        } else {
+          rendition.flow("paginated");
+        }
+      } catch (e) {}
+    }
+    
+autoChooseFlow();
+relayout();
+
     applyMetadata();
     relayout();
     rendition.on('rendered', () => { relayout(); });
+    rendition.on('displayed', () => { relayout(); });
 
 maybeFixLayout();
 

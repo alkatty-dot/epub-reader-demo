@@ -94,7 +94,7 @@ body {
 }
 
 /* Toggle sidebar visible */
-/* Removed empty rule set for .toc--open + .reader */
+/* .toc--open + .reader { } -- removed empty rule set */
 .main.sidebar-open {
   grid-template-columns: 320px 1fr;
 }
@@ -228,3 +228,7 @@ body {
 @media (max-width: 1023.98px){
   .toc{ top: var(--appbar-h) !important; height: calc(100vh - var(--appbar-h)) !important; }
 }
+
+/* v11: unify FXL scaling per spread */
+#viewer .epub-view{ transform-origin: 0 0; will-change: transform; }
+#viewer .fxl-spread{ display:flex; align-items:flex-start; justify-content:center; gap:24px; }

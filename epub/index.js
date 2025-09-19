@@ -16,11 +16,90 @@
   // State
   let book, rendition, currentTheme = "light";
 
+  // ---------- Metadata to header ----------
+  async function applyMetadata() {
+    try {
+      const meta = await book.loaded.metadata;
+      const title = meta?.title || '';
+      const publisher = meta?.publisher || '';
+      // Try to find ISBN in identifiers
+      let isbn = '';
+      const idents = (meta?.identifiers || []);
+      idents.forEach(it => {
+        const v = (it?.value || it || '').toString();
+        if (/97[89]\d{10}/.test(v)) isbn = v;
+      });
+      const tEl = document.getElementById('bookTitle');
+      const mEl = document.getElementById('bookMeta');
+      if (tEl) tEl.textContent = title || 'EPUB Reader';
+      if (mEl) {
+        const bits = [];
+        if (publisher) bits.push(publisher);
+        if (isbn) bits.push('ISBN: ' + isbn);
+        mEl.textContent = bits.length ? '｜' + bits.join(' ｜ ') : '';
+      }
+    } catch (e) {}
+  }
+
+
+  // ---------- Spread & Zoom ----------
+  const spreadSelect = document.getElementById('spreadSelect');
+  const zoomMode = document.getElementById('zoomMode');
+  const zoomRange = document.getElementById('zoomRange');
+  let currentScale = 1;
+
+  function setSpread(mode){
+    try{ rendition.spread(mode); }catch(e){}
+    relayout();
+  }
+
+  function fitFixedLayout(){
+    const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
+    if (!isFXL) return;
+    const iframe = document.querySelector('#viewer iframe');
+    if (!iframe) return;
+    const cw = iframe.contentWindow, doc = cw?.document;
+    if (!doc) return;
+    const vw = document.getElementById('viewer').clientWidth;
+    const vh = document.getElementById('viewer').clientHeight;
+    const dw = doc.documentElement.scrollWidth || 0;
+    const dh = doc.documentElement.scrollHeight || 0;
+    if (!dw || !dh || !vw || !vh) return;
+
+    let s = 1;
+    if (zoomMode?.value === 'fit-height') s = vh / dh;
+    else if (zoomMode?.value === 'custom') s = (parseInt(zoomRange.value,10)||100)/100;
+    else s = vw / dw;
+
+    currentScale = s;
+    doc.documentElement.style.transformOrigin = '0 0';
+    doc.documentElement.style.transform = 'scale(' + s + ')';
+    const w = Math.ceil(dw * s), h = Math.ceil(dh * s);
+    iframe.style.width = w + 'px';
+    iframe.style.height = h + 'px';
+  }
+
+  function relayout(){
+    if (book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout){
+      fitFixedLayout();
+    } else {
+      const iframe = document.querySelector('#viewer iframe');
+      if (iframe){
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+      }
+    }
+  }
+
+  spreadSelect?.addEventListener('change', () => setSpread(spreadSelect.value));
+  zoomMode?.addEventListener('change', () => { relayout(); });
+  zoomRange?.addEventListener('input', () => { if (zoomMode.value==='custom') relayout(); });
+
+
   document.addEventListener("DOMContentLoaded", init, { once: true });
 
   async function init() {
-    // EPUB 在父資料夾
-    
+   
     // ---- Resolve book path from URL or global selected_book (set by ../get_data.js) ----
     function getQueryParam(name) {
       const p = new URLSearchParams(window.location.search);
@@ -62,6 +141,11 @@
 
     registerThemes();
     await rendition.display();
+
+    applyMetadata();
+    relayout();
+    rendition.on('rendered', () => { relayout(); });
+
 maybeFixLayout();
 
     // Global content CSS injected into book iframe

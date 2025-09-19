@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>EPUB閱讀器</title>
+  <title>EPUB Reader</title>
 
   <!-- Styles -->
   <link rel="stylesheet" href="epub.css" />
@@ -22,10 +22,27 @@
       <button class="icon-btn" type="button" aria-label="開啟目錄" id="btnToc">
         ☰
       </button>
-      <div class="title">EPUB Reader</div>
+      <div class="title"><span id="bookTitle">EPUB Reader</span><span id="bookMeta" class="meta"></span></div>
     </div>
 
     <div class="tools">
+      <div class="group">
+        <label for="spreadSelect" class="label">版面</label>
+        <select id="spreadSelect" class="select">
+          <option value="none">單頁</option>
+          <option value="auto" selected>自動</option>
+          <option value="both">跨頁</option>
+        </select>
+      </div>
+      <div class="group">
+        <label for="zoomMode" class="label">縮放</label>
+        <select id="zoomMode" class="select">
+          <option value="fit-width" selected>等寬</option>
+          <option value="fit-height">等高</option>
+          <option value="custom">自訂</option>
+        </select>
+        <input id="zoomRange" type="range" min="50" max="200" value="100" style="width:120px" />
+      </div>
       <div class="group">
         <button class="icon-btn" type="button" aria-label="上一頁" id="btnPrev">←</button>
         <button class="icon-btn" type="button" aria-label="下一頁" id="btnNext">→</button>

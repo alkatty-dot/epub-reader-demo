@@ -20,7 +20,10 @@
   // State
   let book, rendition, currentTheme = "light";
   // --- Zoom/Spread State ---
-  let zoomState = { mode: (document.getElementById('zoomMode')?.value || 'fit-width'), scale: 1 };
+  function defaultZoomMode(){
+  return (window.innerWidth >= 1024 ? 'fit-best' : 'fit-width');
+}
+let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZoomMode()), scale: 1 };
   function setZoomMode(v){ zoomState.mode = v; relayout(); }
   function setCustomZoomFromRange(){ if (zoomMode?.value==='custom') zoomState.mode='custom'; relayout(); }
 
@@ -241,6 +244,18 @@
 
     registerThemes();
 
+  function applyDesktopBestZoom(){
+    try{
+      const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
+      if (window.innerWidth >= 1024 && isFXL){
+        const zm = document.getElementById('zoomMode');
+        if (zm && (!zm.value || zm.value === 'fit-width')) { zm.value = 'fit-best'; zoomState.mode = 'fit-best'; }
+      }
+    }catch(e){}
+  }
+
+applyDesktopBestZoom();
+
   function isDesktop(){ return window.innerWidth >= 1024; }
   function forceDesktopToc(){
     if (isDesktop()){
@@ -254,6 +269,7 @@
   window.addEventListener('resize', forceDesktopToc);
 
     await rendition.display();
+updateAppbarHeightVar();
 
     // Force TOC open on first load (temp workaround)
     try{

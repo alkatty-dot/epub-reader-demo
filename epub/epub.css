@@ -223,3 +223,8 @@ body {
 
 /* Center viewer content */
 .viewer{ display:flex; align-items:flex-start; justify-content:center; }
+
+/* v10 mobile TOC below header */
+@media (max-width: 1023.98px){
+  .toc{ top: var(--appbar-h) !important; height: calc(100vh - var(--appbar-h)) !important; }
+}

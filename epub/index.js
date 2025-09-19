@@ -37,12 +37,27 @@
 
     registerThemes();
     await rendition.display();
+maybeFixLayout();
+
+    // Global content CSS injected into book iframe
+    rendition.themes.default({
+      "html, body": { "margin": "0", "padding": "1rem" },
+      "*": { "box-sizing": "border-box" },
+      "img, svg, video, canvas": { "max-width": "100%", "height": "auto" },
+      "figure": { "margin": "0" },
+      "a": { "text-decoration": "none", "color": "inherit" },
+      "p": { "margin": "0 0 1em 0" },
+      "h1, h2, h3, h4, h5, h6": { "margin": "1.2em 0 .6em" },
+      "@page": { "margin": "0 0 1rem 0" }
+    });
+    
 
     const nav = await book.loaded.navigation;
     buildToc(nav);
 
     wireControls();
     window.addEventListener("resize", handleResize);
+window.addEventListener("resize", maybeFixLayout);
     document.addEventListener("keydown", onKeydown);
   }
 
@@ -128,3 +143,21 @@
     viewer.innerHTML = `無法載入 EPUB：<code>../外公睡著了.epub</code><br/>請確認檔案存在於父資料夾，並以 HTTP 伺服器開啟。`;
   });
 })();
+
+    // If pagination renders overly narrow columns, switch to 'scrolled-doc'
+    function maybeFixLayout() {
+      try {
+        const iframe = document.querySelector("#viewer iframe");
+        if (!iframe) return;
+        const cw = iframe.contentWindow;
+        const docWidth = cw.document.documentElement.clientWidth || 0;
+        if (docWidth && docWidth < 320) {
+          // Too narrow → use scrolled-doc
+          rendition.flow("scrolled-doc");
+          // re-display current location
+          const loc = rendition.currentLocation();
+          if (loc) rendition.display(loc.start.cfi);
+        }
+      } catch (e) {}
+    }
+    

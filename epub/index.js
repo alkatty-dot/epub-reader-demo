@@ -676,3 +676,24 @@ function debounce(fn, wait) {
     t = setTimeout(() => fn.apply(this, args), wait);
   };
 }
+
+#bookInfo {
+  max-width: 1280px;
+  margin: 16px auto 12px;
+  padding: 0 16px;
+  text-align: center;
+}
+#bookInfo .book-title {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+#bookInfo .book-meta {
+  font-size: 14px;
+  margin-top: 6px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+[data-theme="dark"] #bookInfo .book-title { color: #f3f4f6; }
+[data-theme="dark"] #bookInfo .book-meta { color: #9ca3af; }

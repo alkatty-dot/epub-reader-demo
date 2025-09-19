@@ -6,38 +6,48 @@
   const $ = (sel, el = document) => el.querySelector(sel);
 
   // Elements
-  const main = $(".main");
-  const btnToc = $("#btnToc");
+  const main        = $(".main");
+  const btnToc      = $("#btnToc");
   const btnCloseToc = $("#btnCloseToc");
-  const tocPanel = $("#tocPanel");
-  const tocList = $("#tocList");
-  const btnPrev = $("#btnPrev");
-  const btnNext = $("#btnNext");
-  const fontSize = $("#fontSize");
+  const tocPanel    = $("#tocPanel");
+  const tocList     = $("#tocList");
+  const btnPrev     = $("#btnPrev");
+  const btnNext     = $("#btnNext");
+  const fontSize    = $("#fontSize");
   const themeSelect = $("#themeSelect");
-  const viewer = $("#viewer");
+  const viewer      = $("#viewer");
 
   // State
   let book, rendition, currentTheme = "light";
+
   // --- Zoom/Spread State ---
   function defaultZoomMode(){
-  return (window.innerWidth >= 1024 ? 'fit-best' : 'fit-width');
-}
-let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZoomMode()), scale: 1 };
+    return (window.innerWidth >= 1024 ? 'fit-best' : 'fit-width');
+  }
+  let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZoomMode()), scale: 1 };
   function setZoomMode(v){ zoomState.mode = v; relayout(); }
   function setCustomZoomFromRange(){ if (zoomMode?.value==='custom') zoomState.mode='custom'; relayout(); }
+
+  // 取得 iframe 內頁的自然寬高（未縮放）
+  function getNaturalSize(iframe) {
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+    if (!doc) return { w: 0, h: 0 };
+    const w = Math.max(doc.documentElement.scrollWidth || 0, doc.body.scrollWidth || 0);
+    const h = Math.max(doc.documentElement.scrollHeight || 0, doc.body.scrollHeight || 0);
+    return { w, h };
+  }
 
   // Ensure the iframe has a non-trivial size and trigger resizes if needed
   async function ensureVisible() {
     for (const t of [0, 50, 150, 300]) {
       await new Promise(r => setTimeout(r, t));
       const iframe = document.querySelector('#viewer iframe');
-      const w = iframe?.clientWidth || document.getElementById('viewer').clientWidth;
-      const h = iframe?.clientHeight || document.getElementById('viewer').clientHeight;
+      const w = iframe?.clientWidth || viewer.clientWidth;
+      const h = iframe?.clientHeight || viewer.clientHeight;
       if (w > 320 && h > 200) {
         try {
           const loc = rendition.currentLocation();
-          rendition.resize(document.getElementById('viewer').clientWidth, document.getElementById('viewer').clientHeight);
+          rendition.resize(viewer.clientWidth, viewer.clientHeight);
           if (loc) await rendition.display(loc.start.cfi);
         } catch(e){}
         break;
@@ -50,30 +60,22 @@ let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZo
     return md.layout === 'pre-paginated' || md.fixed_layout === true;
   }
 
-  
   function autoMapSpread() {
-    const w = document.getElementById('viewer').clientWidth || 0;
-    const isFXL = detectFXL();
-    // Heuristic: wide screens show both, narrow single
-    if (isFXL) return (w >= 900 ? 'both' : 'none');
-    return (w >= 900 ? 'both' : 'none'); // for reflow paginated as well
+    const w = viewer.clientWidth || 0;
+    // wide → both (對頁), narrow → none（單頁）
+    return (w >= 900 ? 'both' : 'none');
   }
 
   function applyLayoutByMode(mode) {
-    // mode: 'none' | 'auto' | 'both'  (UI semantics)
-    // for reflow: keep paginated, spread depends on mode
-    // for FXL: force paginated; 'auto' -> 'both' (對頁), 'none' -> 'none'
+    // mode: 'none' | 'auto' | 'both'
     const isFXL = detectFXL();
     let spreadMode = (mode==='auto') ? autoMapSpread() : mode;
-    if (isFXL) {
-      rendition.flow('paginated');
-      if (mode === 'auto') spreadMode = 'both'; // FXL 預設對頁顯示
-    } else {
-      rendition.flow('paginated');
-    }
+    // FXL 預設對頁體驗較佳
+    rendition.flow('paginated');
+    if (isFXL && mode === 'auto') spreadMode = 'both';
     try { rendition.spread(spreadMode); } catch(e) {}
+    relayout();
   }
-
 
   // ---------- Metadata to header ----------
   async function applyMetadata() {
@@ -100,87 +102,69 @@ let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZo
     } catch (e) {}
   }
 
-
   // ---------- Spread & Zoom ----------
   const spreadSelect = document.getElementById('spreadSelect');
-  const zoomMode = document.getElementById('zoomMode');
-  const zoomRange = document.getElementById('zoomRange');
-  let currentScale = 1;
+  const zoomMode     = document.getElementById('zoomMode');
+  const zoomRange    = document.getElementById('zoomRange');
 
-  function setSpread(mode){
-    try{ rendition.spread(mode); }catch(e){}
-    relayout();
-  }
-
+  // FXL：以「整組 spread」算唯一倍率，左右頁一致
   function fitFixedLayout(){
-    const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
+    const isFXL = detectFXL();
     if (!isFXL) return;
-    const iframe = document.querySelector('#viewer iframe');
-    if (!iframe) return;
-    const cw = iframe.contentWindow, doc = cw?.document;
-    if (!doc) return;
-    const vw = document.getElementById('viewer').clientWidth;
-    const vh = document.getElementById('viewer').clientHeight;
-    const dw = doc.documentElement.scrollWidth || 0;
-    const dh = doc.documentElement.scrollHeight || 0;
-    if (!dw || !dh || !vw || !vh) return;
 
+    const iframes = Array.from(document.querySelectorAll('#viewer iframe'));
+    if (!iframes.length) return;
+
+    const vw = viewer.clientWidth;
+    const vh = viewer.clientHeight;
+
+    // 蒐集目前畫面上的頁面（單頁=1, 跨頁=2）
+    const pages = iframes
+      .map(iframe => ({ iframe, ...getNaturalSize(iframe) }))
+      .filter(p => p.w && p.h);
+
+    if (!pages.length || !vw || !vh) return;
+
+    // 頁間距（可依喜好改 16/24/32）
+    const GAP = pages.length > 1 ? 24 : 0;
+
+    // 以「整組 spread」來算唯一倍率 s
+    const totalW = pages.reduce((s,p)=> s + p.w, 0);
+    const maxH   = pages.reduce((m,p)=> Math.max(m, p.h), 0);
+
+    const mode = (zoomMode?.value) || (zoomState?.mode) || 'fit-width';
     let s = 1;
-    if (zoomMode?.value === 'fit-height') s = vh / dh;
-    else if (zoomMode?.value === 'custom') s = (parseInt(zoomRange.value,10)||100)/100;
-    else s = vw / dw;
+    if (mode === 'fit-height') {
+      s = vh / maxH;
+    } else if (mode === 'custom') {
+      s = (parseInt(zoomRange?.value || '100', 10)) / 100;
+    } else if (mode === 'fit-best') {
+      s = Math.min((vw - GAP) / totalW, vh / maxH);
+    } else { // fit-width（預設）
+      s = (vw - GAP) / totalW;
+    }
 
-    currentScale = s;
-    // removed v11
-    // removed v11
-    const w = Math.ceil(dw * s), h = Math.ceil(dh * s);
-    iframe.style.width = w + 'px';
-    iframe.style.height = h + 'px';
+    zoomState.scale = s;
+
+    // 將同一個 s 套到每一頁 → 左右頁一致
+    pages.forEach(p => {
+      p.iframe.style.width  = Math.floor(p.w * s) + 'px';
+      p.iframe.style.height = Math.floor(p.h * s) + 'px';
+    });
   }
 
   function relayout(){
-
-    const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
-    if (isFXL){
-      const iframe = document.querySelector('#viewer iframe');
-      const viewerEl = document.getElementById('viewer');
-      if (iframe && viewerEl){
-        const vw = viewerEl.clientWidth, vh = viewerEl.clientHeight;
-        const doc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (doc){
-          const dw = Math.max(doc.documentElement.scrollWidth, doc.body.scrollWidth);
-          const dh = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
-          let s = 1;
-          if (zoomState.mode === 'fit-height') s = vh / (dh || vh);
-          else if (zoomState.mode === 'custom') s = (parseInt(zoomRange?.value||'100',10))/100;
-          else s = vw / (dw || vw); // fit-width
-          zoomState.scale = s;
-          // removed v11
-          // removed v11
-          // removed v11
-          // removed v11
-        }
-      }
+    if (detectFXL()){
+      fitFixedLayout();
     } else {
       const iframe = document.querySelector('#viewer iframe');
       if (iframe){ iframe.style.width='100%'; iframe.style.height='100%'; }
     }
-
-    if (book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout){
-      fitFixedLayout();
-    } else {
-      const iframe = document.querySelector('#viewer iframe');
-      if (iframe){
-        iframe.style.width = '100%';
-        iframe.style.height = '100%';
-      }
-    }
   }
 
   spreadSelect?.addEventListener('change', () => applyLayoutByMode(spreadSelect.value));
-  zoomMode?.addEventListener('change', () => { relayout(); });
-  zoomRange?.addEventListener('input', () => { if (zoomMode.value==='custom') relayout(); });
-
+  zoomMode?.addEventListener('change', () => { setZoomMode(zoomMode.value); });
+  zoomRange?.addEventListener('input', () => { if (zoomMode.value==='custom') setCustomZoomFromRange(); });
 
   document.addEventListener("DOMContentLoaded", init, { once: true });
 
@@ -199,17 +183,14 @@ let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZo
   }
   window.addEventListener('resize', updateAppbarHeightVar);
 
-
   async function init() {
-    // EPUB 在父資料夾
-    
     // ---- Resolve book path from URL or global selected_book (set by ../get_data.js) ----
     function getQueryParam(name) {
       const p = new URLSearchParams(window.location.search);
       return p.get(name);
     }
     const qpFile = getQueryParam("file") || getQueryParam("path");
-    const qpId = getQueryParam("id");
+    const qpId   = getQueryParam("id");
 
     let bookPath;
     if (qpFile) {
@@ -231,76 +212,63 @@ let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZo
       bookPath = "../外公睡著了.epub";
     }
     bookPath = encodeURI(bookPath);
-    
+
     book = ePub(bookPath);
 
+    // 注意：初始化用 paginated；是否要 scrolled-doc 由 autoChooseFlow 判斷
     rendition = book.renderTo("viewer", {
       width: "100%",
       height: "100%",
       spread: "auto",
-      flow: "scrolled-doc",
+      flow: "paginated",
       allowScriptedContent: true
     });
 
     registerThemes();
 
-  function applyDesktopBestZoom(){
-    try{
-      const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
-      if (window.innerWidth >= 1024 && isFXL){
-        const zm = document.getElementById('zoomMode');
-        if (zm && (!zm.value || zm.value === 'fit-width')) { zm.value = 'fit-best'; zoomState.mode = 'fit-best'; }
-      }
-    }catch(e){}
-  }
-
-applyDesktopBestZoom();
-
-  function isDesktop(){ return window.innerWidth >= 1024; }
-  function forceDesktopToc(){
-    if (isDesktop()){
+    function applyDesktopBestZoom(){
       try{
-        tocPanel.removeAttribute('hidden');
-        main.classList.add('sidebar-open');
+        const isFXL = detectFXL();
+        if (window.innerWidth >= 1024 && isFXL){
+          const zm = document.getElementById('zoomMode');
+          if (zm && (!zm.value || zm.value === 'fit-width')) { zm.value = 'fit-best'; zoomState.mode = 'fit-best'; }
+        }
       }catch(e){}
     }
-  }
-  forceDesktopToc();
-  window.addEventListener('resize', forceDesktopToc);
+
+    function isDesktop(){ return window.innerWidth >= 1024; }
+    function forceDesktopToc(){
+      if (isDesktop()){
+        try{
+          tocPanel?.removeAttribute('hidden');
+          main?.classList.add('sidebar-open');
+        }catch(e){}
+      }
+    }
+
+    forceDesktopToc();
+    window.addEventListener('resize', forceDesktopToc);
 
     await rendition.display();
-updateAppbarHeightVar();
+    updateAppbarHeightVar();
 
-    // Force TOC open on first load (temp workaround)
-    try{
-      
-    }catch(e){}
+    await ensureVisible();
 
-await ensureVisible();
-
-    // Choose flow after package is loaded: reflow -> paginated; fixed-layout -> scrolled-doc
+    // Choose flow after package is loaded: reflow -> paginated；固定版面 → paginated（對頁由 spread 控）
     async function autoChooseFlow() {
       try {
         await book.ready;
-        const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
+        const isFXL = detectFXL();
         if (isFXL) {
-          rendition.flow("scrolled-doc");
-        } else {
           rendition.flow("paginated");
+        } else {
+          rendition.flow("paginated"); // 文字書保留分頁（若你想用滾動可改成 scrolled-doc）
         }
       } catch (e) {}
     }
-    
-
-relayout();
+    await autoChooseFlow();
 
     applyMetadata();
-    relayout();
-    rendition.on('rendered', () => { relayout(); });
-    rendition.on('relocated', () => { relayout(); });
-    rendition.on('displayed', () => { relayout(); });
-
-maybeFixLayout();
 
     // Global content CSS injected into book iframe
     rendition.themes.default({
@@ -316,35 +284,44 @@ maybeFixLayout();
       "h1, h2, h3, h4, h5, h6": { "margin": "1.2em 0 .6em" },
       "@page": { "margin": "0 0 1rem 0" }
     });
-    
 
     const nav = await book.loaded.navigation;
     buildToc(nav);
 
+    // 初始 layout 設定
+    applyLayoutByMode(document.getElementById('spreadSelect')?.value || 'auto');
+
     wireControls();
+
+    // Resize handlers
     window.addEventListener("resize", handleResize);
-window.addEventListener('resize', () => { 
-    // If UI is on 'auto', recompute spread
-    if (document.getElementById('spreadSelect')?.value === 'auto'){
-      applyLayoutByMode('auto');
-    }
-});
-
-  // ---- Auto resize when #viewer size changes (sidebar toggle, window resize, etc.) ----
-  const viewerEl = document.getElementById('viewer');
-  if (window.ResizeObserver && viewerEl){
-    const ro = new ResizeObserver(() => {
-      try {
-        const loc = rendition.currentLocation();
-        rendition.resize(viewerEl.clientWidth, viewerEl.clientHeight);
-        if (loc) rendition.display(loc.start.cfi);
-      } catch(e){}
+    window.addEventListener('resize', () => {
+      // If UI is on 'auto', recompute spread
+      if (document.getElementById('spreadSelect')?.value === 'auto'){
+        applyLayoutByMode('auto');
+      }
     });
-    ro.observe(viewerEl);
-  }
 
-window.addEventListener("resize", maybeFixLayout);
+    // ---- Auto resize when #viewer size changes (sidebar toggle, window resize, etc.) ----
+    const viewerEl = viewer;
+    if (window.ResizeObserver && viewerEl){
+      const ro = new ResizeObserver(() => {
+        try {
+          const loc = rendition.currentLocation();
+          rendition.resize(viewerEl.clientWidth, viewerEl.clientHeight);
+          if (loc) rendition.display(loc.start.cfi);
+        } catch(e){}
+      });
+      ro.observe(viewerEl);
+    }
+
+    window.addEventListener("resize", maybeFixLayout);
     document.addEventListener("keydown", onKeydown);
+
+    // Render hooks
+    rendition.on('rendered',  () => { relayout(); });
+    rendition.on('relocated', () => { relayout(); });
+    rendition.on('displayed', () => { relayout(); });
   }
 
   function registerThemes() {
@@ -368,6 +345,7 @@ window.addEventListener("resize", maybeFixLayout);
   }
 
   function buildToc(nav) {
+    if (!tocList) return;
     tocList.innerHTML = "";
     if (!nav || !nav.toc) return;
     nav.toc.forEach(item => {
@@ -395,39 +373,46 @@ window.addEventListener("resize", maybeFixLayout);
   }
 
   function toggleToc() {
-    if (tocPanel.hasAttribute("hidden")) openToc();
+    if (tocPanel?.hasAttribute("hidden")) openToc();
     else closeToc();
   }
   function openToc() {
-    tocPanel.removeAttribute("hidden");
-    main.classList.add("sidebar-open");
+    tocPanel?.removeAttribute("hidden");
+    main?.classList.add("sidebar-open");
 
     // re-apply after sidebar transition
-    setTimeout(() => { 
+    setTimeout(() => {
       const loc = rendition.currentLocation();
       if (loc) rendition.display(loc.start.cfi);
       relayout();
-    try{ const loc = rendition.currentLocation(); rendition.resize(viewer.clientWidth, viewer.clientHeight); if (loc) rendition.display(loc.start.cfi);}catch(e){}
+      try{
+        const loc2 = rendition.currentLocation();
+        rendition.resize(viewer.clientWidth, viewer.clientHeight);
+        if (loc2) rendition.display(loc2.start.cfi);
+      }catch(e){}
     }, 50);
-
   }
   function closeToc() {
-  if (window.innerWidth >= 1024) { return; }
-    tocPanel.setAttribute("hidden", "");
-    main.classList.remove("sidebar-open");
+    // 桌機固定開啟（避免空白）；行動裝置可關
+    if (window.innerWidth >= 1024) { return; }
+    tocPanel?.setAttribute("hidden", "");
+    main?.classList.remove("sidebar-open");
 
     // re-apply after sidebar transition
-    setTimeout(() => { 
+    setTimeout(() => {
       const loc = rendition.currentLocation();
       if (loc) rendition.display(loc.start.cfi);
       relayout();
-    try{ const loc = rendition.currentLocation(); rendition.resize(viewer.clientWidth, viewer.clientHeight); if (loc) rendition.display(loc.start.cfi);}catch(e){}
+      try{
+        const loc2 = rendition.currentLocation();
+        rendition.resize(viewer.clientWidth, viewer.clientHeight);
+        if (loc2) rendition.display(loc2.start.cfi);
+      }catch(e){}
     }, 50);
-
   }
 
   function onKeydown(e) {
-    if (e.key === "ArrowLeft") rendition.prev();
+    if (e.key === "ArrowLeft")  rendition.prev();
     if (e.key === "ArrowRight") rendition.next();
   }
 
@@ -443,34 +428,27 @@ window.addEventListener("resize", maybeFixLayout);
     }, 100);
   }
 
+  // If pagination renders overly narrow columns, switch to 'scrolled-doc'
+  function maybeFixLayout() {
+    try {
+      const iframe = document.querySelector("#viewer iframe");
+      if (!iframe) return;
+      const cw = iframe.contentWindow;
+      const docWidth = cw?.document?.documentElement?.clientWidth || 0;
+      if (docWidth && docWidth < 320) {
+        // Too narrow → use scrolled-doc
+        rendition.flow("scrolled-doc");
+        // re-display current location
+        const loc = rendition.currentLocation();
+        if (loc) rendition.display(loc.start.cfi);
+      }
+    } catch (e) {}
+  }
+
+  // Basic error surface（非致命）
   book?.ready?.catch(err => {
     console.error(err);
     viewer.innerHTML = `無法載入 EPUB：<code>../外公睡著了.epub</code><br/>請確認檔案存在於父資料夾，並以 HTTP 伺服器開啟。`;
   });
-})();
 
-    // If pagination renders overly narrow columns, switch to 'scrolled-doc'
-    function maybeFixLayout() {
-      try {
-        const iframe = document.querySelector("#viewer iframe");
-        if (!iframe) return;
-        const cw = iframe.contentWindow;
-        const docWidth = cw.document.documentElement.clientWidth || 0;
-        if (docWidth && docWidth < 320) {
-          // Too narrow → use scrolled-doc
-          rendition.flow("scrolled-doc");
-          // re-display current location
-          const loc = rendition.currentLocation();
-          if (loc) rendition.display(loc.start.cfi);
-        }
-      } catch (e) {}
-    }
-    
-// 取得 iframe 內頁的自然寬高（未縮放）
-function getNaturalSize(iframe) {
-  const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
-  if (!doc) return { w: 0, h: 0 };
-  const w = Math.max(doc.documentElement.scrollWidth || 0, doc.body.scrollWidth || 0);
-  const h = Math.max(doc.documentElement.scrollHeight || 0, doc.body.scrollHeight || 0);
-  return { w, h };
-}
+})();

@@ -531,9 +531,11 @@
 
 // 加在 index.js 的最後或 DOM ready 後
 document.addEventListener('DOMContentLoaded', () => {
-  // 翻頁
   document.querySelector('[data-action="prev"]')?.addEventListener('click', goToPreviousPage);
   document.querySelector('[data-action="next"]')?.addEventListener('click', goToNextPage);
+  // 其他 font/theme/toc 綁定見上文
+  // 初始化載書
+  start('viewer', '../standard.opf');
 
   // 主題：用 checkbox hack + 程式同步
   const themeToggle = document.getElementById('theme-toggle');

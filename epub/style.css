@@ -366,3 +366,7 @@ body {
 #viewer iframe::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 讓閱讀器可滿版且可互動 */
+.reader { display:flex; min-height:0; }
+#viewer { width:100%; height:100%; pointer-events:auto; }

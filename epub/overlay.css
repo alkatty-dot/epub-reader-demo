@@ -1,8 +1,10 @@
-.viewer{position:relative}
-#viewer{position:relative}
-#viewer .viewer-event{
-  position:absolute; inset:0;
-  /* Let it capture gestures but not block clicks on internal links */
-  pointer-events:auto;
-  background:transparent;
+/* overlay.css：只處理 viewer_event 定位，不動你原有設計 */
+#viewer { position: relative; }
+#viewer .viewer-event {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  /* 讓 index.js 的 touch 綁在這層；若你有內文互動連結、需要點擊，
+     可在 index.js 內依需求切換 pointer-events。 */
+  pointer-events: auto;
 }

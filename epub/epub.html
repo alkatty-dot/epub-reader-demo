@@ -9,10 +9,11 @@
   <link rel="stylesheet" href="epub.css">
 
   <!-- 必要程式 -->
-  <script type="text/javascript" src="../data.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js" defer></script>
-  <script src="epub.min.js" defer></script>
-  <script src="index.js" defer></script>
+  <script src="../data.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+  <script src="epub.min.js"></script>
+  <script src="index.js"></script>
+  <script src="get_data.js"></script>
 </head>
 <body>
   
@@ -44,6 +45,15 @@
     </div>
   </div>
 
+  <script>
+    // 等到 index.js 廣播 EPUBReaderReady 後，再去跑 do_logic()
+    document.addEventListener('EPUBReaderReady', function () {
+      if (typeof do_logic === 'function') {
+        do_logic();
+      }
+    }, { once: true });
+  </script>
+    
   <script>
     function do_logic(){  
       document.getElementById("title").innerHTML += 

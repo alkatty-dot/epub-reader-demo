@@ -2,59 +2,36 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>2025童書星創獎【EPUB閱讀器】</title>
-
-  <!-- 樣式（請確認檔名與路徑正確） -->
-  <link rel="stylesheet" href="epub.css" />
-
-  <!-- JSZip（ePub.js 需要） -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-
-  <!-- ePub.js（一定要在 index.js 之前） -->
-  <script src="epub.min.js"></script>
-
-  <!-- 你的 UI/控制邏輯（已在檔案尾端廣播 EPUBReaderReady） -->
-  <script src="index.js"></script>
-
-  <!-- 你的資料載入與 selected_book 定義（保持原本路徑） -->
-  <!-- 如果 selected_book 在別的檔案（例如 ../data.js），就把它一起放在這個位置、在 get_data.js 之前 -->
-  <!-- <script src="../data.js"></script> -->
-  <script src="get_data.js"></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Redirect by Book File Type</title>
+  <style>
+    body{font-family: Arial, Helvetica, sans-serif; padding:24px; background:#f7f7f7; color:#222}
+    .box{max-width:720px;margin:40px auto;padding:20px;background:#fff;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.06)}
+    h1{font-size:18px;margin:0 0 12px}
+    p {margin:8px 0}
+    .error{color:#c00;font-weight:600}
+    .info{color:#2a7ae2}
+  </style>
+  <script type="text/javascript" src="../data.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="epub.min.js"></script>
+     <link rel="stylesheet" href="index.css">
+     
+      <script src="index.js"></script>
 </head>
 <body>
-  <!-- 書名與基本資訊會由 do_logic() 填入 -->
-  <div id="title" style="padding:12px 16px;"></div>
+  
+  <div id="title"></div>
+  <div id="viewer"></div>
 
-  <!-- 閱讀區（index.js 會把書渲染進來，並動態建立面板/按鈕） -->
-  <div id="viewer" aria-label="EPUB 閱讀器" style="width:100%; height: calc(100vh - 64px);"></div>
-
-  <noscript>本頁需要 JavaScript 才能閱讀 EPUB 檔。</noscript>
-
-  <!-- 你的初始化函式：保留、不直接呼叫 -->
   <script>
-    function do_logic() {
-      // 假設 selected_book 由 get_data.js 提供，包含 title / publisher / isbn / file
-      var t = document.getElementById("title");
-      if (t && window.selected_book) {
-        t.innerHTML +=
-          "<h3 style='margin:0 0 4px'>" + (selected_book.title || "") + "</h3>" +
-          (selected_book.publisher ? " 出版社: " + selected_book.publisher : "") +
-          (selected_book.isbn ? "　ISBN: " + selected_book.isbn : "");
-      }
-      // 啟動閱讀器（維持你原本相對路徑寫法）
-      // 若你的專案結構是「epub.html 與書檔同層」，把 '../' 拿掉即可
-      EPUBReader.init('viewer', '../' + selected_book.file);
+    function do_logic(){  
+    	document.getElementById("title").innerHTML += "<h3>" + selected_book.title + "</h3>" + " 出版社:" + selected_book.publisher + " ISBN:" + selected_book.isbn ;
+    	EPUBReader.init('viewer', '../'+selected_book.file);
     }
-
-    // 等 index.js 廣播 EPUBReaderReady 後，再呼叫 do_logic()
-    document.addEventListener('EPUBReaderReady', function () {
-      if (typeof do_logic === 'function') {
-        do_logic();
-      }
-    }, { once: true });
   </script>
+  
+  
+  <script type="text/javascript" src="../get_data.js"></script>
 </body>
 </html>

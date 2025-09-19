@@ -1,594 +1,342 @@
-(function() {
-  // --- State ---
+(function () {
+  // ===== Global State =====
   var isRendering = false;
   var book, rendition, cfiString, pageProgressionDirection;
 
-  // --- Preferences store ---
-  const STORE_KEY = 'epubReader.prefs';
-  function savePrefs(patch){
-    try{
-      const cur = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+  // ===== Preferences =====
+  var STORE_KEY = 'epubReader.prefs';
+  function savePrefs(patch) {
+    try {
+      var cur = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
       localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign(cur, patch)));
-    }catch(e){}
+    } catch (e) {}
   }
-  function loadPrefs(){
-    try{ return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); }catch(e){ return {}; }
+  function loadPrefs() {
+    try {
+      return JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+    } catch (e) {
+      return {};
+    }
   }
 
-  // --- Helpers / UI placement ---
-  function isFixedLayout(book) {
-    return book.package && book.package.metadata && book.package.metadata.layout === 'pre-paginated';
+  // ===== Utils =====
+  function isFixedLayout(bk) {
+    return !!(bk && bk.package && bk.package.metadata && bk.package.metadata.layout === 'pre-paginated');
   }
+  function $(id) { return document.getElementById(id); }
 
+  // ===== Floating UI positioning =====
   function setupTool() {
-    var viewerDiv = document.getElementById("viewer");
+    var viewerDiv = $('viewer');
     if (!viewerDiv) return;
-    var viewerRect = viewerDiv.getBoundingClientRect();
+    var rect = viewerDiv.getBoundingClientRect();
 
-    var toolButton = document.getElementById("toolButton");
+    var toolButton = $('toolButton');
     if (toolButton) {
-      toolButton.style.top = viewerRect.top + "px";
-      toolButton.style.left = (viewerRect.left + viewerRect.width - toolButton.getBoundingClientRect().width) + "px";
-      toolButton.style.height = "100px";
+      var w = toolButton.getBoundingClientRect().width;
+      toolButton.style.top = rect.top + 'px';
+      toolButton.style.left = (rect.left + rect.width - w) + 'px';
+      toolButton.style.height = '100px';
     }
 
-    var viewerEvent = document.getElementById("viewer_event");
+    var viewerEvent = $('viewer_event');
     if (viewerEvent) {
-      viewerEvent.style.top = (viewerRect.top + 100) + "px";
-      viewerEvent.style.left = viewerRect.left + "px";
-      viewerEvent.style.width = viewerRect.width + "px";
-      viewerEvent.style.height = (viewerRect.height - 100) + "px";
+      viewerEvent.style.top = (rect.top + 100) + 'px';
+      viewerEvent.style.left = rect.left + 'px';
+      viewerEvent.style.width = rect.width + 'px';
+      viewerEvent.style.height = (rect.height - 100) + 'px';
       viewerEvent.style.display = 'block';
     }
 
-    var toc = document.getElementById("toc");
-    if (toc && toc.style.display === "block") {
-      toc.style.left = (viewerRect.left + viewerRect.width - toc.getBoundingClientRect().width) + "px";
+    var toc = $('toc');
+    if (toc && toc.style.display === 'block') {
+      var tw = toc.getBoundingClientRect().width;
+      toc.style.left = (rect.left + rect.width - tw) + 'px';
     }
 
-    var toolDiv = document.getElementById("toolDiv");
-    if (toolDiv && toolDiv.style.display === "block") {
-      toolDiv.style.left = (viewerRect.left + viewerRect.width - toolDiv.getBoundingClientRect().width) + "px";
+    var toolDiv = $('toolDiv');
+    if (toolDiv && toolDiv.style.display === 'block') {
+      var uw = toolDiv.getBoundingClientRect().width;
+      toolDiv.style.left = (rect.left + rect.width - uw) + 'px';
     }
   }
 
-  // --- TOC ---
+  // ===== TOC =====
   function createTocItem(list, tocItem) {
-    var listItem = document.createElement("li");
-    var link = document.createElement("a");
-    link.textContent = tocItem.label;
-    link.href = "#";
-
-    link.onclick = function() {
+    var li = document.createElement('li');
+    var a = document.createElement('a');
+    a.textContent = tocItem.label;
+    a.href = '#';
+    a.onclick = function () {
       if (!rendition) return false;
       isRendering = true;
-      rendition.display(tocItem.href).then(function(){
-        try { cfiString = rendition.currentLocation().start.cfi; } catch(e){}
+      rendition.display(tocItem.href).then(function () {
+        try { cfiString = rendition.currentLocation().start.cfi; } catch (e) {}
         isRendering = false;
         closeToc();
-      }).catch(function(){
-        console.error("頁面切換時發生錯誤");
+      }).catch(function () {
         isRendering = false;
       });
       return false;
     };
+    li.appendChild(a);
 
-    listItem.appendChild(link);
-
-    if (tocItem.subitems && tocItem.subitems.length > 0) {
-      var subList = document.createElement("ul");
-      tocItem.subitems.forEach(function(subItem){
-        createTocItem(subList, subItem);
-      });
-      listItem.appendChild(subList);
+    if (tocItem.subitems && tocItem.subitems.length) {
+      var ul = document.createElement('ul');
+      tocItem.subitems.forEach(function (child) { createTocItem(ul, child); });
+      li.appendChild(ul);
     }
-    list.appendChild(listItem);
+    list.appendChild(li);
   }
 
-  var mouseDownX = 0;
-  var mouseDownX2 = 0;
+  var dragX = 0, dragStartX = 0;
+  function slideIn(panelId) {
+    var panel = $(panelId), viewer = $('viewer');
+    if (!panel || !viewer) return;
 
-  function showToc() {
-    var tocDiv = document.getElementById("toc");
-    var viewer = document.getElementById("viewer");
-    if (!tocDiv || !viewer) return;
+    var vr = viewer.getBoundingClientRect();
+    var w = panel.getBoundingClientRect().width;
+    panel.style.top = vr.top + 'px';
+    panel.style.height = vr.height + 'px';
+    panel.style.left = (vr.left + vr.width) + 'px';
+    panel.style.display = 'block';
 
-    var viewerRect = viewer.getBoundingClientRect();
-    var width = tocDiv.getBoundingClientRect().width;
-
-    tocDiv.style.top = viewerRect.top + "px";
-    tocDiv.style.height = viewerRect.height + "px";
-    tocDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
-    tocDiv.style.display = "block";
-
-    mouseDownX = viewerRect.left + viewerRect.width - width;
-    mouseDownX2 = viewerRect.left + viewerRect.width;
-
-    var currentLeft = (viewerRect.left + viewerRect.width);
-    var finalLeft = (viewerRect.left + viewerRect.width - width);
+    var current = vr.left + vr.width;
+    var target = vr.left + vr.width - w;
     var step = 30;
-
-    function animateRightToLeft() {
-      currentLeft -= step;
-      var left = currentLeft < finalLeft ? finalLeft : currentLeft;
-      tocDiv.style.left = left + "px";
-      if (left > finalLeft) requestAnimationFrame(animateRightToLeft);
+    function anim() {
+      current -= step;
+      var left = current < target ? target : current;
+      panel.style.left = left + 'px';
+      if (left > target) requestAnimationFrame(anim);
     }
-    requestAnimationFrame(animateRightToLeft);
+    requestAnimationFrame(anim);
 
-    var closeTocDiv = document.getElementById("closeTocDiv");
-    if (!closeTocDiv) return;
+    var gripId = panelId === 'toc' ? 'closeTocDiv' : 'closeToolDiv';
+    var grip = $(gripId);
+    if (!grip) return;
 
-    closeTocDiv.onmousedown = function(e){
-      mouseDownX = e.clientX;
-      mouseDownX2 = e.clientX;
-      var closeTocHandle = document.getElementById("closeToc");
-      if (closeTocHandle) {
-        closeTocHandle.style.backgroundColor = 'rgb(64,64,64)';
-        closeTocHandle.style.color = 'white';
-      }
+    grip.onmousedown = function (e) {
+      dragX = e.clientX;
+      dragStartX = e.clientX;
+      var headId = panelId === 'toc' ? 'closeToc' : 'closeTool';
+      var head = $(headId);
+      if (head) { head.style.backgroundColor = 'rgb(64,64,64)'; head.style.color = 'white'; }
       e.preventDefault();
     };
-
-    closeTocDiv.onmousemove = function(e){
-      if (mouseDownX === 0) return;
+    grip.onmousemove = function (e) {
+      if (!dragX) return;
+      var x = parseInt(panel.style.left, 10) || 0;
       var newX = e.clientX;
-      var x = parseInt(tocDiv.style.left, 10) || 0;
-
-      var width = tocDiv.getBoundingClientRect().width;
-      var viewerRect = viewer.getBoundingClientRect();
-      var minLeft = viewerRect.left + viewerRect.width - width;
-      var maxLeft = viewerRect.left + viewerRect.width;
-      var next = x + (newX - mouseDownX);
-
-      if (next < minLeft) next = minLeft;
-      if (next > maxLeft) next = maxLeft;
-
-      tocDiv.style.left = next + "px";
-      mouseDownX = newX;
+      var width = panel.getBoundingClientRect().width;
+      var minL = vr.left + vr.width - width;
+      var maxL = vr.left + vr.width;
+      var next = x + (newX - dragX);
+      if (next < minL) next = minL;
+      if (next > maxL) next = maxL;
+      panel.style.left = next + 'px';
+      dragX = newX;
     };
-
-    closeTocDiv.onmouseup = function(){
-      var closeTocHandle = document.getElementById("closeToc");
-      if (closeTocHandle) {
-        closeTocHandle.style.backgroundColor = 'rgb(232,232,232)';
-        closeTocHandle.style.color = 'black';
-      }
-      var x = parseInt(tocDiv.style.left, 10) || 0;
-      var width = tocDiv.getBoundingClientRect().width;
-      var viewerRect = viewer.getBoundingClientRect();
-      var threshold = viewerRect.left + viewerRect.width - width/2;
-
+    grip.onmouseup = function () {
+      var headId = panelId === 'toc' ? 'closeToc' : 'closeTool';
+      var head = $(headId);
+      if (head) { head.style.backgroundColor = 'rgb(232,232,232)'; head.style.color = 'black'; }
+      var x = parseInt(panel.style.left, 10) || 0;
+      var width = panel.getBoundingClientRect().width;
+      var threshold = vr.left + vr.width - width / 2;
       if (x > threshold) {
-        tocDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
-        tocDiv.style.display = "none";
+        panel.style.left = (vr.left + vr.width) + 'px';
+        panel.style.display = 'none';
       } else {
-        tocDiv.style.left = (viewerRect.left + viewerRect.width - width) + "px";
+        panel.style.left = (vr.left + vr.width - width) + 'px';
       }
-      mouseDownX = 0;
-      mouseDownX2 = 0;
+      dragX = 0; dragStartX = 0;
     };
   }
-
-  function closeToc() {
-    var tocDiv = document.getElementById("toc");
-    var viewer = document.getElementById("viewer");
-    if (!tocDiv || !viewer) return;
-
-    var viewerRect = viewer.getBoundingClientRect();
-    var width = tocDiv.getBoundingClientRect().width;
-    var currentLeft = viewerRect.left + viewerRect.width - width;
-    var finalLeft = viewerRect.left + viewerRect.width;
+  function showToc()  { slideIn('toc');  }
+  function showTool() { slideIn('toolDiv'); }
+  function closeWithAnim(panelId) {
+    var panel = $(panelId), viewer = $('viewer');
+    if (!panel || !viewer) return;
+    var vr = viewer.getBoundingClientRect();
+    var w = panel.getBoundingClientRect().width;
+    var current = vr.left + vr.width - w;
+    var target  = vr.left + vr.width;
     var step = 20;
-
-    function animateLeftToRight() {
-      currentLeft += step;
-      var left = currentLeft > finalLeft ? finalLeft : currentLeft;
-      tocDiv.style.left = left + "px";
-      if (left < finalLeft) {
-        requestAnimationFrame(animateLeftToRight);
-      } else {
-        tocDiv.style.display = "none";
-      }
+    function anim() {
+      current += step;
+      var left = current > target ? target : current;
+      panel.style.left = left + 'px';
+      if (left < target) requestAnimationFrame(anim);
+      else panel.style.display = 'none';
     }
-    requestAnimationFrame(animateLeftToRight);
+    requestAnimationFrame(anim);
   }
+  function closeToc()  { closeWithAnim('toc'); }
+  function closeTool() { closeWithAnim('toolDiv'); }
 
-  function showTool() {
-    var toolDiv = document.getElementById("toolDiv");
-    var viewer = document.getElementById("viewer");
-    if (!toolDiv || !viewer) return;
-
-    var viewerRect = viewer.getBoundingClientRect();
-    var width = toolDiv.getBoundingClientRect().width;
-
-    toolDiv.style.top = viewerRect.top + "px";
-    toolDiv.style.height = viewerRect.height + "px";
-    toolDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
-    toolDiv.style.display = "block";
-
-    mouseDownX = viewerRect.left + viewerRect.width - width;
-    mouseDownX2 = viewerRect.left + viewerRect.width;
-
-    var currentLeft = (viewerRect.left + viewerRect.width);
-    var finalLeft = (viewerRect.left + viewerRect.width - width);
-    var step = 30;
-
-    function animateRightToLeft() {
-      currentLeft -= step;
-      var left = currentLeft < finalLeft ? finalLeft : currentLeft;
-      toolDiv.style.left = left + "px";
-      if (left > finalLeft) requestAnimationFrame(animateRightToLeft);
-    }
-    requestAnimationFrame(animateRightToLeft);
-
-    var closeToolDiv = document.getElementById("closeToolDiv");
-    if (!closeToolDiv) return;
-
-    closeToolDiv.onmousedown = function(e){
-      mouseDownX = e.clientX;
-      mouseDownX2 = e.clientX;
-      var closeToolHandle = document.getElementById("closeTool");
-      if (closeToolHandle) {
-        closeToolHandle.style.backgroundColor = 'rgb(64,64,64)';
-        closeToolHandle.style.color = 'white';
-      }
-      e.preventDefault();
-    };
-
-    closeToolDiv.onmousemove = function(e){
-      if (mouseDownX === 0) return;
-      var newX = e.clientX;
-      var x = parseInt(toolDiv.style.left, 10) || 0;
-
-      var width = toolDiv.getBoundingClientRect().width;
-      var viewerRect = viewer.getBoundingClientRect();
-      var minLeft = viewerRect.left + viewerRect.width - width;
-      var maxLeft = viewerRect.left + viewerRect.width;
-      var next = x + (newX - mouseDownX);
-
-      if (next < minLeft) next = minLeft;
-      if (next > maxLeft) next = maxLeft;
-
-      toolDiv.style.left = next + "px";
-      mouseDownX = newX;
-    };
-
-    closeToolDiv.onmouseup = function(){
-      var closeToolHandle = document.getElementById("closeTool");
-      if (closeToolHandle) {
-        closeToolHandle.style.backgroundColor = 'rgb(232,232,232)';
-        closeToolHandle.style.color = 'black';
-      }
-      var x = parseInt(toolDiv.style.left, 10) || 0;
-      var width = toolDiv.getBoundingClientRect().width;
-      var viewerRect = viewer.getBoundingClientRect();
-      var threshold = viewerRect.left + viewerRect.width - width/2;
-
-      if (x > threshold) {
-        toolDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
-        toolDiv.style.display = "none";
-      } else {
-        toolDiv.style.left = (viewerRect.left + viewerRect.width - width) + "px";
-      }
-      mouseDownX = 0;
-      mouseDownX2 = 0;
-    };
-  }
-
-  function closeTool() {
-    var toolDiv = document.getElementById("toolDiv");
-    var viewer = document.getElementById("viewer");
-    if (!toolDiv || !viewer) return;
-
-    var viewerRect = viewer.getBoundingClientRect();
-    var width = toolDiv.getBoundingClientRect().width;
-    var currentLeft = viewerRect.left + viewerRect.width - width;
-    var finalLeft = viewerRect.left + viewerRect.width;
-    var step = 20;
-
-    function animateLeftToRight() {
-      currentLeft += step;
-      var left = currentLeft > finalLeft ? finalLeft : currentLeft;
-      toolDiv.style.left = left + "px";
-      if (left < finalLeft) {
-        requestAnimationFrame(animateLeftToRight);
-      } else {
-        toolDiv.style.display = "none";
-      }
-    }
-    requestAnimationFrame(animateLeftToRight);
-  }
-
-  // --- UI builders ---
+  // ===== Build UI (same IDs your code expects) =====
   function createElements() {
     // TOC
-    var tocDiv = document.createElement("div");
-    tocDiv.id = "toc";
-    tocDiv.style.display = "none";
-
-    var closeTocDiv = document.createElement("div");
-    closeTocDiv.id = "closeTocDiv";
-    var closeToc = document.createElement("div");
-    closeToc.id = "closeToc";
-    closeToc.innerText = "目錄";
-    closeTocDiv.appendChild(closeToc);
-
-    var tocListDiv = document.createElement("div");
-    tocListDiv.id = "tocList";
-    var tocList = document.createElement("ul");
-    tocList.id = "tocItems";
-    tocListDiv.appendChild(tocList);
-
-    tocDiv.appendChild(closeTocDiv);
-    tocDiv.appendChild(tocListDiv);
+    var tocDiv = document.createElement('div'); tocDiv.id = 'toc'; tocDiv.style.display = 'none';
+    var closeTocDiv = document.createElement('div'); closeTocDiv.id = 'closeTocDiv';
+    var closeTocHead = document.createElement('div'); closeTocHead.id = 'closeToc'; closeTocHead.innerText = '目錄';
+    closeTocDiv.appendChild(closeTocHead);
+    var tocListDiv = document.createElement('div'); tocListDiv.id = 'tocList';
+    var ul = document.createElement('ul'); ul.id = 'tocItems';
+    tocListDiv.appendChild(ul);
+    tocDiv.appendChild(closeTocDiv); tocDiv.appendChild(tocListDiv);
     document.body.appendChild(tocDiv);
 
     // Tool button
-    var toolButton = document.createElement("div");
-    toolButton.id = "toolButton";
-    var toolBtnLeft = document.createElement("div");
-    toolBtnLeft.id = "toolBtnLeft";
-    toolBtnLeft.innerText = "目\n錄";
-    var toolBtnRight = document.createElement("div");
-    toolBtnRight.id = "toolBtnRight";
-    toolBtnRight.innerText = "設\n定";
-    toolButton.appendChild(toolBtnLeft);
-    toolButton.appendChild(toolBtnRight);
+    var toolButton = document.createElement('div'); toolButton.id = 'toolButton';
+    var left = document.createElement('div'); left.id = 'toolBtnLeft'; left.innerText = '目\n錄';
+    var right= document.createElement('div'); right.id = 'toolBtnRight'; right.innerText = '設\n定';
+    toolButton.appendChild(left); toolButton.appendChild(right);
     document.body.appendChild(toolButton);
 
     // Tool panel
-    var toolDiv = document.createElement("div");
-    toolDiv.id = "toolDiv";
-    toolDiv.style.display = "none";
+    var toolDiv = document.createElement('div'); toolDiv.id = 'toolDiv'; toolDiv.style.display = 'none';
+    var closeToolDiv = document.createElement('div'); closeToolDiv.id = 'closeToolDiv';
+    var closeToolHead = document.createElement('div'); closeToolHead.id = 'closeTool'; closeToolHead.innerText = '設定';
+    closeToolDiv.appendChild(closeToolHead);
+    var toolList = document.createElement('div'); toolList.id = 'toolList';
 
-    var closeToolDiv = document.createElement("div");
-    closeToolDiv.id = "closeToolDiv";
-    var closeTool = document.createElement("div");
-    closeTool.id = "closeTool";
-    closeTool.innerText = "設定";
-    closeToolDiv.appendChild(closeTool);
-
-    var toolListDiv = document.createElement("div");
-    toolListDiv.id = "toolList";
-
-    // Line-height
-    var toolLineHeightDiv = document.createElement("div");
-    toolLineHeightDiv.className = "toolItem";
-    toolLineHeightDiv.id = "tool_lineHeigh_div";
-    var lineHeightLabel = document.createElement("label");
-    lineHeightLabel.innerText = "行高";
-    var lineHeightSelect = document.createElement("select");
-    lineHeightSelect.id = "lineHeight";
-    var lineHeights = ["1.3", "1.5", "1.75", "2"];
-    lineHeights.forEach(function(v){
-      var opt = document.createElement("option");
-      opt.value = v; opt.text = v;
-      if (v === "1.5") opt.selected = true;
-      lineHeightSelect.appendChild(opt);
+    // 行高
+    var lhWrap = document.createElement('div'); lhWrap.className = 'toolItem'; lhWrap.id = 'tool_lineHeigh_div';
+    var lhLabel = document.createElement('label'); lhLabel.innerText = '行高';
+    var lhSel = document.createElement('select'); lhSel.id = 'lineHeight';
+    ['1.3','1.5','1.75','2'].forEach(function(v){
+      var o = document.createElement('option'); o.value=v; o.text=v; if (v==='1.5') o.selected = true; lhSel.appendChild(o);
     });
-    var lineHeightAdjust = document.createElement("div");
-    lineHeightAdjust.className = "tool-adjust";
-    var lineHeightMinus = document.createElement("button");
-    lineHeightMinus.className = "adjust-btn";
-    lineHeightMinus.innerText = "-";
-    var lineHeightPlus = document.createElement("button");
-    lineHeightPlus.className = "adjust-btn";
-    lineHeightPlus.innerText = "+";
-    lineHeightAdjust.appendChild(lineHeightMinus);
-    lineHeightAdjust.appendChild(lineHeightPlus);
-    toolLineHeightDiv.appendChild(lineHeightLabel);
-    toolLineHeightDiv.appendChild(lineHeightSelect);
-    toolLineHeightDiv.appendChild(lineHeightAdjust);
+    var lhAdj = document.createElement('div'); lhAdj.className = 'tool-adjust';
+    var lhMinus = document.createElement('button'); lhMinus.className='adjust-btn'; lhMinus.innerText='-';
+    var lhPlus  = document.createElement('button'); lhPlus.className='adjust-btn';  lhPlus.innerText='+';
+    lhAdj.appendChild(lhMinus); lhAdj.appendChild(lhPlus);
+    lhWrap.appendChild(lhLabel); lhWrap.appendChild(lhSel); lhWrap.appendChild(lhAdj);
 
-    // Letter-spacing
-    var toolLetterSpacingDiv = document.createElement("div");
-    toolLetterSpacingDiv.className = "toolItem";
-    toolLetterSpacingDiv.id = "tool_letterSpacing_div";
-    var letterSpacingLabel = document.createElement("label");
-    letterSpacingLabel.innerText = "字距";
-    var letterSpacingSelect = document.createElement("select");
-    letterSpacingSelect.id = "letterSpacing";
-    var letterSpacings = ["0", "0.05em", "0.1em", "0.2em"];
-    letterSpacings.forEach(function(v){
-      var opt = document.createElement("option");
-      opt.value = v; opt.text = v;
-      letterSpacingSelect.appendChild(opt);
+    // 字距
+    var lsWrap = document.createElement('div'); lsWrap.className='toolItem'; lsWrap.id='tool_letterSpacing_div';
+    var lsLabel = document.createElement('label'); lsLabel.innerText='字距';
+    var lsSel = document.createElement('select'); lsSel.id = 'letterSpacing';
+    ['0','0.05em','0.1em','0.2em'].forEach(function(v){
+      var o=document.createElement('option'); o.value=v; o.text=v; lsSel.appendChild(o);
     });
-    var letterSpacingAdjust = document.createElement("div");
-    letterSpacingAdjust.className = "tool-adjust";
-    var letterSpacingMinus = document.createElement("button");
-    letterSpacingMinus.className = "adjust-btn";
-    letterSpacingMinus.innerText = "-";
-    var letterSpacingPlus = document.createElement("button");
-    letterSpacingPlus.className = "adjust-btn";
-    letterSpacingPlus.innerText = "+";
-    letterSpacingAdjust.appendChild(letterSpacingMinus);
-    letterSpacingAdjust.appendChild(letterSpacingPlus);
-    toolLetterSpacingDiv.appendChild(letterSpacingLabel);
-    toolLetterSpacingDiv.appendChild(letterSpacingSelect);
-    toolLetterSpacingDiv.appendChild(letterSpacingAdjust);
+    var lsAdj = document.createElement('div'); lsAdj.className='tool-adjust';
+    var lsMinus=document.createElement('button'); lsMinus.className='adjust-btn'; lsMinus.innerText='-';
+    var lsPlus=document.createElement('button'); lsPlus.className='adjust-btn'; lsPlus.innerText='+';
+    lsAdj.appendChild(lsMinus); lsAdj.appendChild(lsPlus);
+    lsWrap.appendChild(lsLabel); lsWrap.appendChild(lsSel); lsWrap.appendChild(lsAdj);
 
-    // Font-size
-    var toolFontSizeDiv = document.createElement("div");
-    toolFontSizeDiv.className = "toolItem";
-    toolFontSizeDiv.id = "tool_fontSize_div";
-    var fontSizeLabel = document.createElement("label");
-    fontSizeLabel.innerText = "字級";
-    var fontSizeSelect = document.createElement("select");
-    fontSizeSelect.id = "fontSize";
-    var fontSizes = ["90%", "100%", "110%", "120%", "130%", "150%", "180%", "200%"];
-    fontSizes.forEach(function(v){
-      var opt = document.createElement("option");
-      opt.value = v; opt.text = v;
-      if (v === "110%") opt.selected = true;
-      fontSizeSelect.appendChild(opt);
+    // 字級
+    var fsWrap = document.createElement('div'); fsWrap.className='toolItem'; fsWrap.id='tool_fontSize_div';
+    var fsLabel = document.createElement('label'); fsLabel.innerText='字級';
+    var fsSel = document.createElement('select'); fsSel.id='fontSize';
+    ['90%','100%','110%','120%','130%','150%','180%','200%'].forEach(function(v){
+      var o=document.createElement('option'); o.value=v; o.text=v; if (v==='110%') o.selected=true; fsSel.appendChild(o);
     });
-    var fontSizeAdjust = document.createElement("div");
-    fontSizeAdjust.className = "tool-adjust";
-    var fontSizeMinus = document.createElement("button");
-    fontSizeMinus.className = "adjust-btn";
-    fontSizeMinus.innerText = "-";
-    var fontSizePlus = document.createElement("button");
-    fontSizePlus.className = "adjust-btn";
-    fontSizePlus.innerText = "+";
-    fontSizeAdjust.appendChild(fontSizeMinus);
-    fontSizeAdjust.appendChild(fontSizePlus);
-    toolFontSizeDiv.appendChild(fontSizeLabel);
-    toolFontSizeDiv.appendChild(fontSizeSelect);
-    toolFontSizeDiv.appendChild(fontSizeAdjust);
+    var fsAdj=document.createElement('div'); fsAdj.className='tool-adjust';
+    var fsMinus=document.createElement('button'); fsMinus.className='adjust-btn'; fsMinus.innerText='-';
+    var fsPlus=document.createElement('button'); fsPlus.className='adjust-btn'; fsPlus.innerText='+';
+    fsAdj.appendChild(fsMinus); fsAdj.appendChild(fsPlus);
+    fsWrap.appendChild(fsLabel); fsWrap.appendChild(fsSel); fsWrap.appendChild(fsAdj);
 
-    // Theme
-    var toolThemeDiv = document.createElement("div");
-    toolThemeDiv.className = "toolItem";
-    toolThemeDiv.id = "tool_theme_div";
-    var themeLabel = document.createElement("label");
-    themeLabel.innerText = "主題";
-    var themeDiv = document.createElement("div");
+    // 主題
+    var thWrap = document.createElement('div'); thWrap.className='toolItem'; thWrap.id='tool_theme_div';
+    var thLabel = document.createElement('label'); thLabel.innerText='主題';
+    var thDiv = document.createElement('div');
     [
-      { id: "light", value: "light", text: "亮色", checked: true },
-      { id: "mi",    value: "mi",    text: "米黃" },
-      { id: "dark",  value: "dark",  text: "暗色" }
+      { id:'light', value:'light', text:'亮色', checked:true },
+      { id:'mi',    value:'mi',    text:'米黃' },
+      { id:'dark',  value:'dark',  text:'暗色' }
     ].forEach(function(t){
-      var radioDiv = document.createElement("div");
-      var radio = document.createElement("input");
-      radio.type = "radio";
-      radio.name = "theme";
-      radio.id = t.id;
-      radio.value = t.value;
-      if (t.checked) radio.checked = true;
-      var label = document.createElement("label");
-      label.htmlFor = t.id;
-      label.innerText = t.text;
-      radioDiv.appendChild(radio);
-      radioDiv.appendChild(label);
-      themeDiv.appendChild(radioDiv);
+      var node = document.createElement('div');
+      var r = document.createElement('input'); r.type='radio'; r.name='theme'; r.id=t.id; r.value=t.value; if (t.checked) r.checked=true;
+      var l = document.createElement('label'); l.htmlFor=t.id; l.innerText=t.text;
+      node.appendChild(r); node.appendChild(l); thDiv.appendChild(node);
     });
-    toolThemeDiv.appendChild(themeLabel);
-    toolThemeDiv.appendChild(themeDiv);
+    thWrap.appendChild(thLabel); thWrap.appendChild(thDiv);
 
-    // Layout
-    var toolLayoutDiv = document.createElement("div");
-    toolLayoutDiv.className = "toolItem";
-    var layoutLabel = document.createElement("label");
-    layoutLabel.innerText = "版面";
-    var layoutDiv = document.createElement("div");
+    // 版面
+    var loWrap = document.createElement('div'); loWrap.className='toolItem';
+    var loLabel = document.createElement('label'); loLabel.innerText='版面';
+    var loDiv = document.createElement('div');
     [
-      { id: "auto", value: "auto", text: "自動", checked: true },
-      { id: "none", value: "none", text: "單頁" },
-      { id: "both", value: "both", text: "跨頁" }
-    ].forEach(function(l){
-      var radioDiv = document.createElement("div");
-      var radio = document.createElement("input");
-      radio.type = "radio";
-      radio.name = "layout";
-      radio.id = l.id;
-      radio.value = l.value;
-      if (l.checked) radio.checked = true;
-      var label = document.createElement("label");
-      label.htmlFor = l.id;
-      label.innerText = l.text;
-      radioDiv.appendChild(radio);
-      radioDiv.appendChild(label);
-      layoutDiv.appendChild(radioDiv);
+      { id:'auto', value:'auto', text:'自動', checked:true },
+      { id:'none', value:'none', text:'單頁' },
+      { id:'both', value:'both', text:'跨頁' }
+    ].forEach(function(x){
+      var node=document.createElement('div');
+      var r=document.createElement('input'); r.type='radio'; r.name='layout'; r.id=x.id; r.value=x.value; if (x.checked) r.checked=true;
+      var l=document.createElement('label'); l.htmlFor=x.id; l.innerText=x.text;
+      node.appendChild(r); node.appendChild(l); loDiv.appendChild(node);
     });
-    toolLayoutDiv.appendChild(layoutLabel);
-    toolLayoutDiv.appendChild(layoutDiv);
+    loWrap.appendChild(loLabel); loWrap.appendChild(loDiv);
 
-    toolListDiv.appendChild(toolThemeDiv);
-    toolListDiv.appendChild(toolLineHeightDiv);
-    toolListDiv.appendChild(toolLetterSpacingDiv);
-    toolListDiv.appendChild(toolFontSizeDiv);
-    toolListDiv.appendChild(toolLayoutDiv);
+    toolList.appendChild(thWrap);
+    toolList.appendChild(lhWrap);
+    toolList.appendChild(lsWrap);
+    toolList.appendChild(fsWrap);
+    toolList.appendChild(loWrap);
     toolDiv.appendChild(closeToolDiv);
-    toolDiv.appendChild(toolListDiv);
+    toolDiv.appendChild(toolList);
     document.body.appendChild(toolDiv);
 
     // Viewer click layer
-    var viewerEvent = document.createElement("div");
-    viewerEvent.id = "viewer_event";
-    viewerEvent.innerText = "";
-    viewerEvent.style.display = "none";
-    document.body.appendChild(viewerEvent);
+    var ve = document.createElement('div'); ve.id='viewer_event'; ve.innerText=''; ve.style.display='none';
+    document.body.appendChild(ve);
   }
 
-  // --- Core start ---
+  // ===== Core start =====
   function start(containerId, bookUrl) {
     var layoutRadio = document.querySelector('input[name="layout"]:checked');
     var layout = layoutRadio ? layoutRadio.value : 'auto';
 
     book = ePub(bookUrl);
-    book.ready.then(function(){
-      var packageDocument = book.package || {};
-      pageProgressionDirection = packageDocument.metadata ? packageDocument.metadata['direction'] : undefined;
+    book.ready.then(function () {
+      var pack = book.package || {};
+      pageProgressionDirection = pack.metadata ? pack.metadata['direction'] : undefined;
 
-      const fixedLayout = isFixedLayout(book);
-      rendition = book.renderTo(containerId, {
-        spread: layout,
-        width: "100%",
-        height: "100%"
-      });
+      var fixed = isFixedLayout(book);
+      rendition = book.renderTo(containerId, { spread: layout, width: '100%', height: '100%' });
 
-      if (fixedLayout) {
-        var hideIds = ["tool_theme_div","tool_lineHeigh_div","tool_letterSpacing_div","tool_fontSize_div"];
-        hideIds.forEach(function(id){ var el=document.getElementById(id); if (el) el.style.display='none'; });
+      if (fixed) {
+        ['tool_theme_div','tool_lineHeigh_div','tool_letterSpacing_div','tool_fontSize_div']
+          .forEach(function (id) { var el = $(id); if (el) el.style.display = 'none'; });
       }
 
-      // register themes
-      rendition.themes.register('dark',  { "body": { "color": "white", "background-color": "black" }});
-      rendition.themes.register('light', { "body": { "color": "black", "background-color": "white" }});
-      rendition.themes.register('mi',    { "body": { "color": "black", "background-color": "Beige" }});
+      // themes
+      rendition.themes.register('dark',  { body: { color: 'white',  'background-color': 'black' }});
+      rendition.themes.register('light', { body: { color: 'black',  'background-color': 'white' }});
+      rendition.themes.register('mi',    { body: { color: 'black',  'background-color': 'Beige' }});
 
-      // Load saved prefs -> sync UI
-      (function syncPrefsToUI(){
-        var prefs = loadPrefs();
-        try{
-          if (prefs.theme) {
-            var r = document.querySelector('input[name="theme"][value="'+prefs.theme+'"]');
-            if (r) r.checked = true;
-          }
-          if (prefs.layout) {
-            var rL = document.querySelector('input[name="layout"][value="'+prefs.layout+'"]');
-            if (rL) rL.checked = true;
-          }
-          if (prefs.fontSize) {
-            var fs = document.getElementById('fontSize');
-            if (fs) fs.value = prefs.fontSize;
-          }
-          if (prefs.lineHeight) {
-            var lh = document.getElementById('lineHeight');
-            if (lh) lh.value = prefs.lineHeight;
-          }
-          if (prefs.letterSpacing) {
-            var ls = document.getElementById('letterSpacing');
-            if (ls) ls.value = prefs.letterSpacing;
-          }
-        }catch(e){}
+      // sync saved prefs -> UI
+      (function () {
+        var p = loadPrefs();
+        try {
+          if (p.theme) { var r = document.querySelector('input[name="theme"][value="'+p.theme+'"]'); if (r) r.checked = true; }
+          if (p.layout){ var r2= document.querySelector('input[name="layout"][value="'+p.layout+'"]'); if (r2) r2.checked = true; }
+          if (p.fontSize) { var fs = $('fontSize'); if (fs) fs.value = p.fontSize; }
+          if (p.lineHeight) { var lh = $('lineHeight'); if (lh) lh.value = p.lineHeight; }
+          if (p.letterSpacing) { var ls = $('letterSpacing'); if (ls) ls.value = p.letterSpacing; }
+        } catch (e) {}
       })();
 
-      // Apply current UI -> rendition
-      changeFontSize();
-      changeTheme();
-      changeLetterSpacing();
-      changeLineHeight();
+      // apply UI -> rendition
+      changeFontSize(); changeTheme(); changeLetterSpacing(); changeLineHeight();
       setupTool();
 
-      var p = cfiString ? rendition.display(cfiString) : rendition.display();
-      p.then(function(){ isRendering = false; }).catch(function(){ isRendering = false; });
+      var disp = cfiString ? rendition.display(cfiString) : rendition.display();
+      disp.finally(function () { isRendering = false; });
 
-      function updateCFI() {
+      rendition.on('rendered', function () {
         try {
-          var location = rendition.currentLocation();
-          if (location && location.start && location.start.cfi) {
-            cfiString = location.start.cfi;
-          }
-        } catch(e) {
-          console.warn("CFI 取得失敗", e);
-        }
-      }
-      rendition.on("rendered", updateCFI);
-    }).catch(function(e){
-      console.error("Book loading failed:", e);
+          var loc = rendition.currentLocation();
+          if (loc && loc.start && loc.start.cfi) cfiString = loc.start.cfi;
+        } catch (e) {}
+      });
+    }).catch(function (e) {
+      console.error('Book loading failed:', e);
     });
 
     if (!window.isLoadToc) {
@@ -598,103 +346,87 @@
   }
 
   function loadToc() {
-    var tocList = document.getElementById("tocItems");
-    if (!tocList) return;
-
+    var list = $('tocItems'); if (!list) return;
     if (book && book.navigation && Array.isArray(book.navigation.toc)) {
-      book.navigation.toc.forEach(function(item){
-        createTocItem(tocList, item);
-      });
+      book.navigation.toc.forEach(function (item) { createTocItem(list, item); });
     } else if (book && book.loaded && book.loaded.navigation) {
-      book.loaded.navigation.then(function(toc){
-        if (toc && Array.isArray(toc.toc)) {
-          toc.toc.forEach(function(item){ createTocItem(tocList, item); });
-        }
-      }).catch(function(e){ console.error(e); });
+      book.loaded.navigation.then(function (toc) {
+        if (toc && Array.isArray(toc.toc)) toc.toc.forEach(function (item) { createTocItem(list, item); });
+      }).catch(function (e) { console.error(e); });
     }
   }
 
-  // --- Setting changes (with persistence) ---
+  // ===== Appearance changes =====
   function changeFontSize() {
     if (!rendition) return;
-    var sel = document.getElementById("fontSize");
-    if (!sel) return;
+    var sel = $('fontSize'); if (!sel) return;
     var val = sel.value;
     rendition.themes.fontSize(val);
     savePrefs({ fontSize: val });
   }
-
   function changeTheme() {
     if (!rendition) return;
     var r = document.querySelector('input[name="theme"]:checked');
     var theme = r ? r.value : 'light';
-    var toolButton = document.getElementById("toolButton");
-    if (toolButton) toolButton.style.color = (theme === 'dark' ? 'white' : 'black');
+    var btn = $('toolButton');
+    if (btn) btn.style.color = (theme === 'dark' ? 'white' : 'black');
     rendition.themes.select(theme);
     savePrefs({ theme: theme });
   }
-
   function changeLineHeight() {
     if (!rendition) return;
-    var sel = document.getElementById("lineHeight");
-    if (!sel) return;
+    var sel = $('lineHeight'); if (!sel) return;
     var val = sel.value;
-    rendition.themes.default({ "*": { "line-height": val }});
+    rendition.themes.default({ '*': { 'line-height': val } });
     rendition.themes.update('default');
     savePrefs({ lineHeight: val });
   }
-
   function changeLetterSpacing() {
     if (!rendition) return;
-    var sel = document.getElementById("letterSpacing");
-    if (!sel) return;
+    var sel = $('letterSpacing'); if (!sel) return;
     var val = sel.value;
-    rendition.themes.default({ "body": { "letter-spacing": val }});
+    rendition.themes.default({ 'body': { 'letter-spacing': val } });
     rendition.themes.update('default');
     savePrefs({ letterSpacing: val });
   }
-
   function changeLayout() {
     var r = document.querySelector('input[name="layout"]:checked');
     var layout = r ? r.value : 'auto';
     savePrefs({ layout: layout });
-    var viewer = document.getElementById("viewer");
-    if (viewer) viewer.innerHTML = "";
-    // 依你既有路徑啟動（原專案內用 standard.opf）
-    start("viewer", "book2/item/standard.opf");
+    var viewer = $('viewer'); if (viewer) viewer.innerHTML = '';
+    // 依你的結構重新啟動（你原本就是這條路徑）
+    start('viewer', 'book2/item/standard.opf');
   }
 
-  // --- Navigation ---
+  // ===== Navigation =====
   function goToPreviousPage() {
-    if (!rendition) return;
-    if (isRendering) return;
+    if (!rendition || isRendering) return;
     isRendering = true;
-    rendition.prev().then(function(){
-      try { cfiString = rendition.currentLocation().start.cfi; } catch(e){}
-    }).finally(function(){ isRendering = false; });
+    rendition.prev().finally(function () {
+      try { cfiString = rendition.currentLocation().start.cfi; } catch (e) {}
+      isRendering = false;
+    });
   }
-
   function goToNextPage() {
-    if (!rendition) return;
-    if (isRendering) return;
+    if (!rendition || isRendering) return;
     isRendering = true;
-    rendition.next().then(function(){
-      try { cfiString = rendition.currentLocation().start.cfi; } catch(e){}
-    }).finally(function(){ isRendering = false; });
+    rendition.next().finally(function () {
+      try { cfiString = rendition.currentLocation().start.cfi; } catch (e) {}
+      isRendering = false;
+    });
   }
 
-  // --- Select stepper (+/-) ---
+  // ===== Select stepper =====
   function adjustSelect(selectId, direction) {
-    var select = document.getElementById(selectId);
-    if (!select) return;
-    var options = Array.from(select.options).map(function(o){ return o.value; });
-    var currentIndex = options.indexOf(select.value);
-    var newIndex = Math.min(Math.max(0, currentIndex + direction), options.length - 1);
-    select.value = options[newIndex];
-    select.dispatchEvent(new Event('change'));
+    var sel = $(selectId); if (!sel) return;
+    var opts = Array.prototype.map.call(sel.options, function (o) { return o.value; });
+    var idx = Math.max(0, opts.indexOf(sel.value));
+    var n = Math.min(Math.max(0, idx + direction), opts.length - 1);
+    sel.value = opts[n];
+    sel.dispatchEvent(new Event('change'));
   }
 
-  // --- Init & listeners ---
+  // ===== Init & Events =====
   function init(containerId, bookUrl) {
     createElements();
     setupEventListeners();
@@ -702,113 +434,82 @@
   }
 
   function setupEventListeners() {
-    var setupBtn = document.getElementById('setup_button');
-    if (setupBtn) setupBtn.addEventListener('click', showTool);
-    var tocBtn = document.getElementById('show_toc');
-    if (tocBtn) tocBtn.addEventListener('click', showToc);
-    var closeTocBtn = document.getElementById('closeToc');
-    if (closeTocBtn) closeTocBtn.addEventListener('click', closeToc);
-    var closeToolBtn = document.getElementById('closeTool');
-    if (closeToolBtn) closeToolBtn.addEventListener('click', closeTool);
+    var setupBtn = $('setup_button'); if (setupBtn) setupBtn.addEventListener('click', showTool);
+    var tocBtn = $('show_toc'); if (tocBtn) tocBtn.addEventListener('click', showToc);
+    var cT = $('closeToc'); if (cT) cT.addEventListener('click', closeToc);
+    var cU = $('closeTool'); if (cU) cU.addEventListener('click', closeTool);
 
-    document.querySelectorAll('input[name="layout"]').forEach(function(input){
-      input.addEventListener('change', changeLayout);
-    });
-    document.querySelectorAll('input[name="theme"]').forEach(function(input){
-      input.addEventListener('change', changeTheme);
-    });
+    document.querySelectorAll('input[name="layout"]').forEach(function (i) { i.addEventListener('change', changeLayout); });
+    document.querySelectorAll('input[name="theme"]').forEach(function (i) { i.addEventListener('change', changeTheme); });
+    var lh = $('lineHeight'); if (lh) lh.addEventListener('change', changeLineHeight);
+    var ls = $('letterSpacing'); if (ls) ls.addEventListener('change', changeLetterSpacing);
+    var fs = $('fontSize'); if (fs) fs.addEventListener('change', changeFontSize);
 
-    var lh = document.getElementById('lineHeight');
-    if (lh) lh.addEventListener('change', changeLineHeight);
-    var ls = document.getElementById('letterSpacing');
-    if (ls) ls.addEventListener('change', changeLetterSpacing);
-    var fs = document.getElementById('fontSize');
-    if (fs) fs.addEventListener('change', changeFontSize);
+    document.addEventListener('click', function (e) {
+      var ve = $('viewer_event');
+      if (!ve || e.target !== ve) return;
+      e.stopPropagation();
 
-    document.querySelectorAll('.adjust-btn').forEach(function(button){
-      button.addEventListener('click', function(){
-        var select = this.parentElement.querySelector('select');
-        if (!select) return;
-        var direction = this.textContent.trim() === '+' ? 1 : -1;
-        adjustSelect(select.id, direction);
-      });
+      var toolDiv = $('toolDiv'), toc = $('toc');
+      if (toolDiv && toolDiv.style.display !== 'none') { closeTool(); return; }
+      if (toc && toc.style.display !== 'none') { closeToc(); return; }
+
+      var rect = ve.getBoundingClientRect();
+      var rightSide = e.clientX > (rect.left + rect.width / 2);
+      var rtl = (pageProgressionDirection === 'rtl');
+      if (rightSide) { rtl ? goToPreviousPage() : goToNextPage(); }
+      else { rtl ? goToNextPage() : goToPreviousPage(); }
     });
 
-    var viewerEvent = document.getElementById("viewer_event");
-    if (viewerEvent) {
-      viewerEvent.addEventListener("click", function(event) {
-        event.stopPropagation();
-        var toolDiv = document.getElementById("toolDiv");
-        var toc = document.getElementById("toc");
-        if (toolDiv && toolDiv.style.display !== "none") { closeTool(); return; }
-        if (toc && toc.style.display !== "none") { closeToc(); return; }
+    document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
-        var rect = viewerEvent.getBoundingClientRect();
-        var clickX = event.clientX;
-
-        if (clickX > rect.left + rect.width / 2) {
-          if (pageProgressionDirection === 'rtl') { goToPreviousPage(); } else { goToNextPage(); }
-        } else {
-          if (pageProgressionDirection === 'rtl') { goToNextPage(); } else { goToPreviousPage(); }
-        }
-      });
-    }
-
-    // 禁右鍵（你原本就有）
-    document.addEventListener("contextmenu", function (event) { event.preventDefault(); });
-
-    // 鍵盤：左右翻頁、Ctrl/Cmd +/- 調字級；不影響輸入元件
-    document.addEventListener("keydown", function (event) {
+    document.addEventListener('keydown', function (event) {
       var tag = (event.target && event.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
 
-      if (event.key === "ArrowLeft") {
-        if (pageProgressionDirection === 'rtl') { goToNextPage(); } else { goToPreviousPage(); }
+      if (event.key === 'ArrowLeft') {
+        (pageProgressionDirection === 'rtl') ? goToNextPage() : goToPreviousPage();
         event.preventDefault();
-      } else if (event.key === "ArrowRight") {
-        if (pageProgressionDirection === 'rtl') { goToPreviousPage(); } else { goToNextPage(); }
+      } else if (event.key === 'ArrowRight') {
+        (pageProgressionDirection === 'rtl') ? goToPreviousPage() : goToNextPage();
         event.preventDefault();
       } else if ((event.ctrlKey || event.metaKey) && (event.key === '+' || event.key === '=')) {
-        var sel = document.getElementById('fontSize');
-        if (sel) {
-          var opts = Array.from(sel.options).map(function(o){ return o.value; });
-          var idx = Math.max(0, opts.indexOf(sel.value));
-          if (idx < opts.length - 1) { sel.value = opts[idx + 1]; changeFontSize(); }
+        var selUp = $('fontSize');
+        if (selUp) {
+          var opts = Array.prototype.map.call(selUp.options, function (o) { return o.value; });
+          var idx = Math.max(0, opts.indexOf(selUp.value));
+          if (idx < opts.length - 1) { selUp.value = opts[idx + 1]; changeFontSize(); }
         }
         event.preventDefault();
       } else if ((event.ctrlKey || event.metaKey) && event.key === '-') {
-        var sel2 = document.getElementById('fontSize');
-        if (sel2) {
-          var opts2 = Array.from(sel2.options).map(function(o){ return o.value; });
-          var idx2 = Math.max(0, opts2.indexOf(sel2.value));
-          if (idx2 > 0) { sel2.value = opts2[idx2 - 1]; changeFontSize(); }
+        var selDn = $('fontSize');
+        if (selDn) {
+          var opts2 = Array.prototype.map.call(selDn.options, function (o) { return o.value; });
+          var idx2 = Math.max(0, opts2.indexOf(selDn.value));
+          if (idx2 > 0) { selDn.value = opts2[idx2 - 1]; changeFontSize(); }
         }
         event.preventDefault();
       }
     });
 
-    // 保留你原本的 keypress 行為，但避免影響輸入元件
-    document.addEventListener("keypress", function (event) {
+    document.addEventListener('keypress', function (event) {
       var tag = (event.target && event.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
       event.preventDefault();
     });
 
-    // 窗口尺寸變化時重算浮動元件位置
     window.addEventListener('resize', setupTool, { passive: true });
     window.addEventListener('scroll', setupTool, { passive: true });
   }
 
-// --- Public API ---
-window.EPUBReader = { init: init };
+  // ===== Public API =====
+  window.EPUBReader = { init: init };
 
-// 🔔 通知外部：EPUBReader 已可用
-(function signalReady(){
-  const fire = () => document.dispatchEvent(new Event('EPUBReaderReady'));
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', fire, { once: true });
-  } else {
-    // 確保在本輪事件迴圈尾端再丟（避免競速）
-    setTimeout(fire, 0);
-  }
+  // ===== Signal Ready =====
+  (function signalReady() {
+    function fire() { document.dispatchEvent(new Event('EPUBReaderReady')); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fire, { once: true });
+    else setTimeout(fire, 0);
+  })();
+
 })();

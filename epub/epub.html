@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>EPUB 閱讀器</title>
+    <script type="text/javascript" src="../data.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="epub.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="index.js"></script>
+  </head>
+  <body>
+    <!-- 利用 checkbox hack 控制：主題切換、TOC 側欄開合 -->
+    <input type="checkbox" id="theme-toggle" hidden />
+    <input type="checkbox" id="toc-toggle" hidden />
+
+    <div class="app">
+      <!-- 頂部工具列 -->
+      <header class="topbar" role="navigation" aria-label="閱讀器工具列">
+        <div class="left-group">
+          <label class="icon-btn" for="toc-toggle" aria-label="開合目錄">
+            <!-- 漢堡選單圖示 -->
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 6h18v2H3zM3 11h18v2H3zM3 16h18v2H3z"></path>
+            </svg>
+          </label>
+          <div class="brand">
+            <span class="title">EPUB 閱讀器</span>
+            <span class="divider">•</span>
+            <span class="subtitle">Web Reader</span>
+          </div>
+        </div>
+
+        <div class="right-group">
+          <!-- 以下按鈕提供 UI；日後可用 JS 綁定實際功能 -->
+          <button class="icon-btn" type="button" aria-label="上一頁" data-action="prev">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"></path>
+            </svg>
+          </button>
+          <button class="icon-btn" type="button" aria-label="下一頁" data-action="next">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m10 17 6-5-6-5v10z"></path>
+            </svg>
+          </button>
+
+          <span class="toolbar-gap"></span>
+
+          <button class="icon-btn" type="button" aria-label="縮小字級" data-action="font-dec">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 4h14v2H5zm7 16H6v-2h6z"></path>
+            </svg>
+          </button>
+          <button class="icon-btn" type="button" aria-label="放大字級" data-action="font-inc">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 4h14v2H5zm7 12v4h-2v-4H6v-2h4V10h2v4h4v2z"></path>
+            </svg>
+          </button>
+
+          <span class="toolbar-gap"></span>
+
+          <label class="toggle theme" for="theme-toggle" title="切換深色/淺色主題" aria-label="切換主題">
+            <svg class="sun" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.76 4.84 5.34 3.42 3.92 4.84 5.34 6.26 6.76 4.84zM1 13h3v-2H1v2zm10-9h-2v3h2V4zm7.66-.58-1.42 1.42 1.42 1.42 1.42-1.42L18.66 3.42zM17 11c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6 6 2.69 6 6zm3 2h3v-2h-3v2zM6.76 19.16 5.34 20.58l-1.42-1.42 1.42-1.42 1.42 1.42zM11 20h2v-3h-2v3zm6.24-.84 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42z"/>
+            </svg>
+            <svg class="moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9.37 5.51A7 7 0 0 0 12 19a7 7 0 0 0 6.49-9.37c-.2-.55-.86-.72-1.32-.35A5.5 5.5 0 1 1 9.72 6.83c.37-.46.2-1.12-.35-1.32z"/>
+            </svg>
+          </label>
+        </div>
+      </header>
+
+      <!-- 主體區：側欄目錄 + 閱讀器視窗 -->
+      <div class="main">
+        <!-- 側欄目錄（可摺疊） -->
+        <aside class="toc" aria-label="目錄">
+          <div class="toc-header">
+            <span>目錄</span>
+            <label class="icon-btn" for="toc-toggle" aria-label="關閉目錄">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+              </svg>
+            </label>
+          </div>
+          <nav class="toc-list">
+            <ol id="tocList"></ol> <!-- 提供 index.js 動態塞 TOC -->
+          </nav>
+        </aside>
+        <section class="reader">
+          <div id="viewer" class="reader-viewport" aria-label="閱讀視窗"></div>
+        </section>
+        <!-- 閱讀器視窗：請將 EPUB 掛載在此（常見為 iframe 或 div#viewer） -->
+        <section id="viewer" role="main" aria-label="閱讀內容">
+          <!-- 若使用 ePub.js，通常會掛在這層或用 iframe 呈現 -->
+          <iframe
+            id="epub-iframe"
+            title="EPUB 內容"
+            allow="clipboard-read; clipboard-write"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        </section>
+      </div>
+
+      <!-- 底部狀態列（頁碼、進度） -->
+      <footer class="bottombar" aria-live="polite">
+        <div class="status">
+          <span id="book-title">—</span>
+          <span class="sep">·</span>
+          <span id="chapter-title">—</span>
+        </div>
+        <div class="progress">
+          <span id="page-info">0 / 0</span>
+          <div class="progress-rail" aria-hidden="true">
+            <div class="progress-bar" style="width: 0%"></div>
+          </div>
+          <span id="percent">0%</span>
+        </div>
+      </footer>
+    </div>
+
+    <!-- 提示：實作功能時，可在此引入 JS（例如 ePub.js）並掛到上方 data-action 元件 -->
+    <!-- <script src="epub.min.js"></script> -->
+    <!-- <script src="reader.js"></script> -->
+  </body>
+</html>

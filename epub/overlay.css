@@ -1,0 +1,8 @@
+.viewer{position:relative}
+#viewer{position:relative}
+#viewer .viewer-event{
+  position:absolute; inset:0;
+  /* Let it capture gestures but not block clicks on internal links */
+  pointer-events:auto;
+  background:transparent;
+}

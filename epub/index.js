@@ -697,3 +697,13 @@ function debounce(fn, wait) {
 }
 [data-theme="dark"] #bookInfo .book-title { color: #f3f4f6; }
 [data-theme="dark"] #bookInfo .book-meta { color: #9ca3af; }
+
+#viewer {
+  background: #fff !important; /* 亮色主題固定白底 */
+}
+[data-theme="dark"] #viewer {
+  background: #0b0f14 !important; /* 深色主題深底 */
+}
+#viewer_event {
+  background: transparent !important; /* 確保事件區不蓋一層白霧 */
+}

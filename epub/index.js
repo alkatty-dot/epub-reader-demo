@@ -1,7 +1,3 @@
-/* EPUB Reader UI + Logic
- * EPUB 檔案放在 ../外公睡著了.epub （父資料夾）
- */
-
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
 
@@ -24,14 +20,43 @@
 
   async function init() {
     // EPUB 在父資料夾
-    const bookPath = encodeURI("../外公睡著了.epub");
+    
+    // ---- Resolve book path from URL or global selected_book (set by ../get_data.js) ----
+    function getQueryParam(name) {
+      const p = new URLSearchParams(window.location.search);
+      return p.get(name);
+    }
+    const qpFile = getQueryParam("file") || getQueryParam("path");
+    const qpId = getQueryParam("id");
+
+    let bookPath;
+    if (qpFile) {
+      // If index.html passes explicit file name/path
+      bookPath = qpFile;
+      if (!/^https?:\/\//.test(bookPath)) {
+        // relative to epub.html -> prefer parent folder root
+        bookPath = "../" + bookPath;
+      }
+    } else if (typeof selected_book === "object" && selected_book && selected_book.file) {
+      // Loaded from data.js + get_data.js
+      bookPath = "../" + selected_book.file;
+    } else if (qpId) {
+      // Fallback: try to map id to booksData if available
+      const found = (typeof booksData !== "undefined") ? booksData.find(b => String(b.number) === String(qpId) || String(b.id) === String(qpId)) : null;
+      bookPath = found && found.file ? ("../" + found.file) : "../外公睡著了.epub";
+    } else {
+      // Last resort
+      bookPath = "../外公睡著了.epub";
+    }
+    bookPath = encodeURI(bookPath);
+    
     book = ePub(bookPath);
 
     rendition = book.renderTo("viewer", {
       width: "100%",
       height: "100%",
       spread: "auto",
-      flow: "paginated",
+      flow: "scrolled-doc",
       allowScriptedContent: true
     });
 

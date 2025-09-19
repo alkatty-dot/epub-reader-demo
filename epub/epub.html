@@ -2,68 +2,59 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>2025童書星創獎【EPUB閱讀器】</title>
-  
-  <!-- 保持乾淨：樣式統一放 epub.css -->
-  <link rel="stylesheet" href="epub.css">
 
-  <!-- 必要程式 -->
-  <script src="../data.js"></script>
+  <!-- 樣式（請確認檔名與路徑正確） -->
+  <link rel="stylesheet" href="epub.css" />
+
+  <!-- JSZip（ePub.js 需要） -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+
+  <!-- ePub.js（一定要在 index.js 之前） -->
   <script src="epub.min.js"></script>
+
+  <!-- 你的 UI/控制邏輯（已在檔案尾端廣播 EPUBReaderReady） -->
   <script src="index.js"></script>
+
+  <!-- 你的資料載入與 selected_book 定義（保持原本路徑） -->
+  <!-- 如果 selected_book 在別的檔案（例如 ../data.js），就把它一起放在這個位置、在 get_data.js 之前 -->
+  <!-- <script src="../data.js"></script> -->
   <script src="get_data.js"></script>
 </head>
 <body>
-  
-  <!-- 書名 / 出版資訊 -->
-  <div id="title" role="banner" aria-live="polite"></div>
+  <!-- 書名與基本資訊會由 do_logic() 填入 -->
+  <div id="title" style="padding:12px 16px;"></div>
 
-  <!-- 閱讀器畫面 -->
-  <div id="viewer" role="region" aria-label="EPUB 閱讀器" aria-busy="true"></div>
+  <!-- 閱讀區（index.js 會把書渲染進來，並動態建立面板/按鈕） -->
+  <div id="viewer" aria-label="EPUB 閱讀器" style="width:100%; height: calc(100vh - 64px);"></div>
 
-  <!-- 載入動畫 -->
-  <div id="loading" aria-hidden="true" hidden>
-    <div class="spinner" aria-label="載入中…"></div>
-  </div>
+  <noscript>本頁需要 JavaScript 才能閱讀 EPUB 檔。</noscript>
 
-    <!-- 訊息吐司 -->
-  <div id="toast" role="status" aria-live="polite" hidden></div>
-
-  <!-- 🔹控制區塊 -->
-  <div class="controls" role="toolbar" aria-label="閱讀控制">
-    <div class="navigation-buttons">
-      <button id="prev" class="btn btn-primary" aria-label="上一頁">上一頁</button>
-      <button id="next" class="btn btn-primary" aria-label="下一頁">下一頁</button>
-      <button id="increaseFont" class="btn btn-accent" aria-label="放大字體">放大</button>
-      <button id="decreaseFont" class="btn btn-ghost" aria-label="縮小字體">縮小</button>
-    </div>
-    <div class="extra-controls">
-      <button id="tocButton" class="btn btn-ghost" aria-haspopup="true" aria-controls="toc">目錄</button>
-      <button id="settingsButton" class="btn btn-ghost" aria-haspopup="true" aria-controls="toolDiv">設定</button>
-    </div>
-  </div>
-
+  <!-- 你的初始化函式：保留、不直接呼叫 -->
   <script>
-    // 等到 index.js 廣播 EPUBReaderReady 後，再去跑 do_logic()
+    function do_logic() {
+      // 假設 selected_book 由 get_data.js 提供，包含 title / publisher / isbn / file
+      var t = document.getElementById("title");
+      if (t && window.selected_book) {
+        t.innerHTML +=
+          "<h3 style='margin:0 0 4px'>" + (selected_book.title || "") + "</h3>" +
+          (selected_book.publisher ? " 出版社: " + selected_book.publisher : "") +
+          (selected_book.isbn ? "　ISBN: " + selected_book.isbn : "");
+      }
+      // 啟動閱讀器（維持你原本相對路徑寫法）
+      // 若你的專案結構是「epub.html 與書檔同層」，把 '../' 拿掉即可
+      EPUBReader.init('viewer', '../' + selected_book.file);
+    }
+
+    // 等 index.js 廣播 EPUBReaderReady 後，再呼叫 do_logic()
     document.addEventListener('EPUBReaderReady', function () {
       if (typeof do_logic === 'function') {
         do_logic();
       }
     }, { once: true });
   </script>
-    
-  <script>
-    function do_logic(){  
-      document.getElementById("title").innerHTML += 
-        "<h3>" + selected_book.title + "</h3>" + 
-        " 出版社:" + selected_book.publisher + 
-        " ISBN:" + selected_book.isbn ;
-      EPUBReader.init('viewer', '../' + selected_book.file);
-    }
-  </script>
-  
-  <script type="text/javascript" src="../get_data.js"></script>
 </body>
 </html>

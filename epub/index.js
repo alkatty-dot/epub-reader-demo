@@ -1,3 +1,7 @@
+/* EPUB Reader UI + Logic
+ * EPUB 檔案放在 ../外公睡著了.epub （父資料夾）
+ */
+
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
 
@@ -15,6 +19,11 @@
 
   // State
   let book, rendition, currentTheme = "light";
+  // --- Zoom/Spread State ---
+  let zoomState = { mode: (document.getElementById('zoomMode')?.value || 'fit-width'), scale: 1 };
+  function setZoomMode(v){ zoomState.mode = v; relayout(); }
+  function setCustomZoomFromRange(){ if (zoomMode?.value==='custom') zoomState.mode='custom'; relayout(); }
+
   // Ensure the iframe has a non-trivial size and trigger resizes if needed
   async function ensureVisible() {
     for (const t of [0, 50, 150, 300]) {
@@ -127,6 +136,33 @@
   }
 
   function relayout(){
+
+    const isFXL = book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout;
+    if (isFXL){
+      const iframe = document.querySelector('#viewer iframe');
+      const viewerEl = document.getElementById('viewer');
+      if (iframe && viewerEl){
+        const vw = viewerEl.clientWidth, vh = viewerEl.clientHeight;
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc){
+          const dw = Math.max(doc.documentElement.scrollWidth, doc.body.scrollWidth);
+          const dh = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+          let s = 1;
+          if (zoomState.mode === 'fit-height') s = vh / (dh || vh);
+          else if (zoomState.mode === 'custom') s = (parseInt(zoomRange?.value||'100',10))/100;
+          else s = vw / (dw || vw); // fit-width
+          zoomState.scale = s;
+          doc.documentElement.style.transformOrigin = '0 0';
+          doc.documentElement.style.transform = 'scale(' + s + ')';
+          iframe.style.width = Math.ceil((dw||vw) * s) + 'px';
+          iframe.style.height = Math.ceil((dh||vh) * s) + 'px';
+        }
+      }
+    } else {
+      const iframe = document.querySelector('#viewer iframe');
+      if (iframe){ iframe.style.width='100%'; iframe.style.height='100%'; }
+    }
+
     if (book?.package?.metadata?.layout === 'pre-paginated' || book?.package?.metadata?.fixed_layout){
       fitFixedLayout();
     } else {
@@ -192,8 +228,7 @@
 
     // Force TOC open on first load (temp workaround)
     try{
-      tocPanel.removeAttribute('hidden');
-      main.classList.add('sidebar-open');
+      
     }catch(e){}
 
 await ensureVisible();
@@ -217,6 +252,7 @@ relayout();
     applyMetadata();
     relayout();
     rendition.on('rendered', () => { relayout(); });
+    rendition.on('relocated', () => { relayout(); });
     rendition.on('displayed', () => { relayout(); });
 
 maybeFixLayout();
@@ -326,6 +362,7 @@ window.addEventListener("resize", maybeFixLayout);
       const loc = rendition.currentLocation();
       if (loc) rendition.display(loc.start.cfi);
       relayout();
+    try{ const loc = rendition.currentLocation(); rendition.resize(viewer.clientWidth, viewer.clientHeight); if (loc) rendition.display(loc.start.cfi);}catch(e){}
     }, 50);
 
   }
@@ -338,6 +375,7 @@ window.addEventListener("resize", maybeFixLayout);
       const loc = rendition.currentLocation();
       if (loc) rendition.display(loc.start.cfi);
       relayout();
+    try{ const loc = rendition.currentLocation(); rendition.resize(viewer.clientWidth, viewer.clientHeight); if (loc) rendition.display(loc.start.cfi);}catch(e){}
     }, 50);
 
   }

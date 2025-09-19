@@ -94,6 +94,7 @@ body {
 }
 
 /* Toggle sidebar visible */
+/* (Removed empty rule set for .toc--open + .reader) */
 .main.sidebar-open {
   grid-template-columns: 320px 1fr;
 }
@@ -140,3 +141,47 @@ body {
 
 /* Improve readability for reflow */
 #viewer{line-height:1.6}
+
+/* ---- RWD overhaul ---- */
+:root { --appbar-h:56px; --toc-w:320px; }
+
+.appbar{flex-wrap:wrap; row-gap:6px;}
+.tools{flex-wrap:wrap}
+
+.main{
+  display:grid;
+  grid-template-columns: 0 1fr; /* default: toc closed */
+  height: calc(100vh - var(--appbar-h));
+  min-height: 420px;
+}
+
+.sidebar-open{ grid-template-columns: var(--toc-w) 1fr; }
+
+.toc{ position: relative; z-index: 2; }
+.reader{ position: relative; min-width:0; min-height:0; }
+#viewer{ position: relative; width:100%; height:100%; overflow:hidden; }
+
+#viewer iframe{ display:block; width:100% !important; height:100% !important; border:0; }
+
+/* Tablet & below: TOC becomes overlay drawer */
+@media (max-width: 1024px){
+  .main{ grid-template-columns: 1fr; }
+  .toc{
+    position: absolute;
+    left:0; top:0; bottom:0; width:min(82vw, var(--toc-w));
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+    background:#fff; border-right:1px solid #e5e7eb;
+    box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  }
+  .sidebar-open .toc{ transform: translateX(0); }
+}
+
+@media (max-width: 640px){
+  .tools .group{ gap:4px }
+  .select{ height:30px; font-size:13px }
+  .icon-btn{ height:30px; }
+}
+
+/* Better text defaults inside content (reflow) */
+.viewer{ display:flex; align-items:flex-start; justify-content:center; }

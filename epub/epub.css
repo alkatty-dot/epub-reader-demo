@@ -94,13 +94,12 @@ body {
 }
 
 /* Toggle sidebar visible */
-.toc--open + .reader { /* no-op, reserved */ }
+/* Removed empty rule set for .toc--open+.reader */
 .main.sidebar-open {
   grid-template-columns: 320px 1fr;
 }
 
 /* --- Dark Theme Host (page chrome) --- */
-:root[data-ui-theme="dark"] body {}
 :root[data-ui-theme="dark"] .appbar { background: #0f172a; border-bottom-color: #1f2937; }
 :root[data-ui-theme="dark"] .appbar, 
 :root[data-ui-theme="dark"] .label,
@@ -134,8 +133,11 @@ body {
 /* Ensure the EPUB iframe can position itself correctly */
 #viewer { position: relative; overflow: hidden; }
 /* Some versions of epub.js absolutely position the iframe; make sure it fills */
-#viewer iframe { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border: 0; }
+#viewer iframe { position: static !important; display:block; width:100% !important; height:100% !important; border:0; }
 /* When using scrolled-doc, the iframe might be static; still ensure it expands */
 .viewer iframe { width: 100% !important; height: 100% !important; }
 
 #viewer iframe{max-width:100%;max-height:100%;}
+
+/* Improve readability for reflow */
+#viewer{line-height:1.6}

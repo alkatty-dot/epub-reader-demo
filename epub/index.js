@@ -1,3 +1,7 @@
+/* EPUB Reader UI + Logic
+ * EPUB 檔案放在 ../外公睡著了.epub （父資料夾）
+ */
+
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
 
@@ -15,6 +19,24 @@
 
   // State
   let book, rendition, currentTheme = "light";
+  // Ensure the iframe has a non-trivial size and trigger resizes if needed
+  async function ensureVisible() {
+    for (const t of [0, 50, 150, 300]) {
+      await new Promise(r => setTimeout(r, t));
+      const iframe = document.querySelector('#viewer iframe');
+      const w = iframe?.clientWidth || document.getElementById('viewer').clientWidth;
+      const h = iframe?.clientHeight || document.getElementById('viewer').clientHeight;
+      if (w > 320 && h > 200) {
+        try {
+          const loc = rendition.currentLocation();
+          rendition.resize(document.getElementById('viewer').clientWidth, document.getElementById('viewer').clientHeight);
+          if (loc) await rendition.display(loc.start.cfi);
+        } catch(e){}
+        break;
+      }
+    }
+  }
+
   function detectFXL() {
     const md = book?.package?.metadata || {};
     return md.layout === 'pre-paginated' || md.fixed_layout === true;
@@ -162,6 +184,7 @@
 
     registerThemes();
     await rendition.display();
+await ensureVisible();
 
     // Choose flow after package is loaded: reflow -> paginated; fixed-layout -> scrolled-doc
     async function autoChooseFlow() {
@@ -194,6 +217,9 @@ maybeFixLayout();
       "figure": { "margin": "0" },
       "a": { "text-decoration": "none", "color": "inherit" },
       "p": { "margin": "0 0 1em 0" },
+      "body": { "max-width": "100%", "word-break": "break-word" },
+      "img": { "display":"block" },
+      "html, body": { "column-gap": "2rem" },
       "h1, h2, h3, h4, h5, h6": { "margin": "1.2em 0 .6em" },
       "@page": { "margin": "0 0 1rem 0" }
     });

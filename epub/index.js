@@ -799,6 +799,16 @@
     window.addEventListener('scroll', setupTool, { passive: true });
   }
 
-  // --- Public API ---
-  window.EPUBReader = { init: init };
+// --- Public API ---
+window.EPUBReader = { init: init };
+
+// 🔔 通知外部：EPUBReader 已可用
+(function signalReady(){
+  const fire = () => document.dispatchEvent(new Event('EPUBReaderReady'));
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fire, { once: true });
+  } else {
+    // 確保在本輪事件迴圈尾端再丟（避免競速）
+    setTimeout(fire, 0);
+  }
 })();

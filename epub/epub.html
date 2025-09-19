@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>EPUB Reader</title>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- JS dependencies: jszip -> epub.js -> app -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="epub.min.js"></script>
+  <script defer src="index.js"></script>
+</head>
+<body>
+  <!-- App Header -->
+  <header class="appbar">
+    <div class="left">
+      <button class="icon-btn" type="button" aria-label="開啟目錄" id="btnToc">
+        ☰
+      </button>
+      <div class="title">EPUB Reader</div>
+    </div>
+
+    <div class="tools">
+      <div class="group">
+        <button class="icon-btn" type="button" aria-label="上一頁" id="btnPrev">←</button>
+        <button class="icon-btn" type="button" aria-label="下一頁" id="btnNext">→</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <label for="fontSize" class="label">字級</label>
+        <select id="fontSize" class="select">
+          <option value="85%">85%</option>
+          <option value="90%">90%</option>
+          <option value="100%" selected>100%</option>
+          <option value="110%">110%</option>
+          <option value="120%">120%</option>
+          <option value="130%">130%</option>
+          <option value="150%">150%</option>
+        </select>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="group">
+        <label class="label" for="themeSelect">主題</label>
+        <select id="themeSelect" class="select">
+          <option value="light">Light</option>
+          <option value="mi">Sepia</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- Layout: sidebar + reader -->
+  <main class="main">
+    <aside class="toc" id="tocPanel" aria-label="目錄" hidden>
+      <div class="toc-header">
+        <div class="toc-title">目錄</div>
+        <button class="icon-btn" type="button" aria-label="關閉目錄" id="btnCloseToc">✕</button>
+      </div>
+      <nav class="toc-list">
+        <ol id="tocList" class="toc-ol"></ol>
+      </nav>
+    </aside>
+
+    <section class="reader">
+      <div id="viewer" class="viewer" aria-label="閱讀視窗"></div>
+    </section>
+  </main>
+
+  <noscript>本頁需要 JavaScript 才能運作。</noscript>
+</body>
+</html>

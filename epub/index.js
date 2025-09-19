@@ -1,5 +1,17 @@
 (function() {
     var isRendering = false; // Added: Track rendering state
+    // === Preferences storage ===
+    const STORE_KEY = 'epubReader.prefs';
+    function savePrefs(patch){
+        try{
+            const cur = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+            localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign(cur, patch)));
+        }catch(e){}
+    }
+    function loadPrefs(){
+        try{ return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); }catch(e){ return {}; }
+    }
+
     function isFixedLayout(book) {
         return book.package.metadata.layout === 'pre-paginated';
     }
@@ -14,29 +26,468 @@
         toolButton.style.height = 100 + "px";
         
         var viewerEvent = document.getElementById("viewer_event");
-        viewerEvent.style.top = viewerRect.top + "px";   
-        viewerEvent.style.left = viewerRect.left + "px"; 
+        viewerEvent.style.top = (viewerRect.top + 100) + "px";
+        viewerEvent.style.left = viewerRect.left + "px";
+        viewerEvent.style.width = viewerRect.width + "px";
+        viewerEvent.style.height = (viewerRect.height - 100) + "px";
+        viewerEvent.style.display = 'block';
+        
+        var toc = document.getElementById("toc");
+        if (toc.style.display == "block") {
+            toc.style.left = (viewerRect.left + viewerRect.width - toc.getBoundingClientRect().width) + "px";
+        }
         
         var toolDiv = document.getElementById("toolDiv");
-        toolDiv.style.top = viewerRect.top + "px";
-        toolDiv.style.left = viewerRect.left + "px";
-        toolDiv.style.height = (viewerRect.height-30) + "px";
-        toolDiv.style.width = (viewerRect.width *0.8) + "px";
+        if (toolDiv.style.display == "block") {
+            toolDiv.style.left = (viewerRect.left + viewerRect.width - toolDiv.getBoundingClientRect().width) + "px";
+        }
+    }
+
+    function createTocItem(list, tocItem) {
+        var listItem = document.createElement("li");
+        var link = document.createElement("a");
+        link.textContent = tocItem.label;
+        link.href = "#";
+
+        link.onclick = function() {
+            isRendering = true;
+            rendition.display(tocItem.href).then(() => {
+                cfiString = rendition.currentLocation().start.cfi;
+                isRendering = false;
+                closeToc();
+            }).catch(() => {
+                console.error("頁面切換時發生錯誤");
+                isRendering = false;
+            });
+            return false;
+        };
+
+        listItem.appendChild(link);
+
+        if (tocItem.subitems && tocItem.subitems.length > 0) {
+            var subList = document.createElement("ul");
+            tocItem.subitems.forEach(subItem => {
+                createTocItem(subList, subItem);
+            });
+            listItem.appendChild(subList);
+        }
+        list.appendChild(listItem);
+    }
+
+    var mouseDownX = 0;
+    var mouseDownX2 = 0;
+    function showToc() {
+        var tocDiv = document.getElementById("toc");
+        var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+        var width = tocDiv.getBoundingClientRect().width;
         
-        viewerEvent.style.height = viewerRect.height + "px";
-        viewerEvent.style.width = viewerRect.width + "px";
+        tocDiv.style.top = viewerRect.top + "px";
+        tocDiv.style.height = (viewerRect.height) + "px";
+        tocDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
+        tocDiv.style.display = "block";
+        //tocDiv.style.left = (viewerRect.left + viewerRect.width - width) + "px";
+        
+        mouseDownX = viewerRect.left + viewerRect.width - width;
+        mouseDownX2 = viewerRect.left + viewerRect.width;
+        
+        var currentLeft = (viewerRect.left + viewerRect.width);
+        var finalLeft = (viewerRect.left + viewerRect.width - width);
+        var step = 30;
+        
+        function animateRightToLeft() {
+            var left = currentLeft - step;
+            if (left < finalLeft) {
+                left = finalLeft;
+            }
+            tocDiv.style.left = left + "px";
+            if (left > finalLeft) {
+                requestAnimationFrame(animateRightToLeft);
+            }
+        }
+        requestAnimationFrame(animateRightToLeft);
+        
+        var closeTocDiv = document.getElementById("closeTocDiv");
+        closeTocDiv.addEventListener("mousedown", function (e) {
+            mouseDownX = e.clientX;
+            mouseDownX2 = e.clientX;
+            var closeToc = document.getElementById("closeToc");
+            closeToc.style.backgroundColor = 'rgb(64,64,64)';
+            closeToc.style.color = 'white';
+            e.preventDefault();
+        });
+        
+        closeTocDiv.addEventListener("mousemove", function (e) {
+            var newX = e.clientX; 
+            if (mouseDownX == 0) return;
+            var x = parseInt(tocDiv.style.left) ; 
+            
+            var width = tocDiv.getBoundingClientRect().width;
+            var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+            if((x + (newX - mouseDownX)) < (viewerRect.left + viewerRect.width - width)) {
+                tocDiv.style.left = (viewerRect.left + viewerRect.width - width) + "px";
+            } else if((x + (newX - mouseDownX)) > (viewerRect.left + viewerRect.width)) {
+                tocDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
+            } else {
+                tocDiv.style.left = (x + (newX - mouseDownX)) + "px";
+            }
+            
+            mouseDownX = newX; 
+        });
+        
+        closeTocDiv.addEventListener("mouseup", function () {
+            var closeToc = document.getElementById("closeToc");
+            closeToc.style.backgroundColor = 'rgb(232,232,232)';
+            closeToc.style.color = 'black';
+            mouseDownX = 0;
+            var x = parseInt(tocDiv.style.left) ; 
+            
+            var width = tocDiv.getBoundingClientRect().width;
+            var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+            if((x + (mouseDownX2 - x)) > (viewerRect.left + viewerRect.width - width/2)) {
+                tocDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
+                tocDiv.style.display = "none";
+                mouseDownX2 = 0;
+            } else {
+                tocDiv.style.left = (viewerRect.left + viewerRect.width - width) + "px";
+            }
+        });
     }
 
-    var book;
-    var rendition;
-    var cfiString;
-    var pageProgressionDirection;
+    function closeToc() {
+        var tocDiv = document.getElementById("toc");
+        var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+        var width = tocDiv.getBoundingClientRect().width;
+        var currentLeft = viewerRect.left + viewerRect.width - width;
+        var finalLeft = viewerRect.left + viewerRect.width;
+        var step = 20;
 
-    function changeLayout() {
-        book.destroy();
-        start("viewer", "book2/item/standard.opf");
+        function animateLeftToRight() {
+            var left = currentLeft + step;
+            if (left > finalLeft) {
+                left = finalLeft;
+            }
+            tocDiv.style.left = left + "px";
+            if (left < finalLeft) {
+                requestAnimationFrame(animateLeftToRight);
+            } else {
+                tocDiv.style.display = "none";
+            }
+        }
+        requestAnimationFrame(animateLeftToRight);
     }
 
+    function showTool() {
+        var toolDiv = document.getElementById("toolDiv");
+        var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+        var width = toolDiv.getBoundingClientRect().width;
+        
+        toolDiv.style.top = viewerRect.top + "px";
+        toolDiv.style.height = (viewerRect.height) + "px";
+        toolDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
+        toolDiv.style.display = "block";
+        
+        mouseDownX = viewerRect.left + viewerRect.width - width;
+        mouseDownX2 = viewerRect.left + viewerRect.width;
+        
+        var currentLeft = (viewerRect.left + viewerRect.width);
+        var finalLeft = (viewerRect.left + viewerRect.width - width);
+        var step = 30;
+        
+        function animateRightToLeft() {
+            var left = currentLeft - step;
+            if (left < finalLeft) {
+                left = finalLeft;
+            }
+            toolDiv.style.left = left + "px";
+            if (left > finalLeft) {
+                requestAnimationFrame(animateRightToLeft);
+            }
+        }
+        requestAnimationFrame(animateRightToLeft);
+        
+        var closeToolDiv = document.getElementById("closeToolDiv");
+        closeToolDiv.addEventListener("mousedown", function (e) {
+            mouseDownX = e.clientX;
+            mouseDownX2 = e.clientX;
+            var closeTool = document.getElementById("closeTool");
+            closeTool.style.backgroundColor = 'rgb(64,64,64)';
+            closeTool.style.color = 'white';
+            e.preventDefault();
+        });
+        
+        closeToolDiv.addEventListener("mousemove", function (e) {
+            var newX = e.clientX; 
+            if (mouseDownX == 0) return;
+            var x = parseInt(toolDiv.style.left) ; 
+            
+            var width = toolDiv.getBoundingClientRect().width;
+            var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+            if((x + (newX - mouseDownX)) < (viewerRect.left + viewerRect.width - width)) {
+                toolDiv.style.left = (viewerRect.left + viewerRect.width - width) + "px";
+            } else if((x + (newX - mouseDownX)) > (viewerRect.left + viewerRect.width)) {
+                toolDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
+            } else {
+                toolDiv.style.left = (x + (newX - mouseDownX)) + "px";
+            }
+            
+            mouseDownX = newX; 
+        });
+        
+        closeToolDiv.addEventListener("mouseup", function () {
+            var closeTool = document.getElementById("closeTool");
+            closeTool.style.backgroundColor = 'rgb(232,232,232)';
+            closeTool.style.color = 'black';
+            mouseDownX = 0;
+            var x = parseInt(toolDiv.style.left) ; 
+            
+            var width = toolDiv.getBoundingClientRect().width;
+            var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+            if((x + (mouseDownX2 - x)) > (viewerRect.left + viewerRect.width - width/2)) {
+                toolDiv.style.left = (viewerRect.left + viewerRect.width) + "px";
+                toolDiv.style.display = "none";
+                mouseDownX2 = 0;
+            } else {
+                toolDiv.style.left = (viewerRect.left + viewerRect.width - width) + "px";
+            }
+        });
+    }
+
+    function closeTool() {
+        var toolDiv = document.getElementById("toolDiv");
+        var viewerRect = document.getElementById("viewer").getBoundingClientRect();
+        var width = toolDiv.getBoundingClientRect().width;
+        var currentLeft = viewerRect.left + viewerRect.width - width;
+        var finalLeft = viewerRect.left + viewerRect.width;
+        var step = 20;
+
+        function animateLeftToRight() {
+            var left = currentLeft + step;
+            if (left > finalLeft) {
+                left = finalLeft;
+            }
+            toolDiv.style.left = left + "px";
+            if (left < finalLeft) {
+                requestAnimationFrame(animateLeftToRight);
+            } else {
+                toolDiv.style.display = "none";
+            }
+        }
+        requestAnimationFrame(animateLeftToRight);
+    }
+
+    function createElements() {
+        var tocDiv = document.createElement("div");
+        tocDiv.id = "toc";
+        tocDiv.style.display = "none";
+
+        var closeTocDiv = document.createElement("div");
+        closeTocDiv.id = "closeTocDiv";
+        var closeToc = document.createElement("div");
+        closeToc.id = "closeToc";
+        closeToc.innerText = "目錄";
+        closeTocDiv.appendChild(closeToc);
+
+        var tocListDiv = document.createElement("div");
+        tocListDiv.id = "tocList";
+        var tocList = document.createElement("ul");
+        tocList.id = "tocItems";
+        tocListDiv.appendChild(tocList);
+
+        tocDiv.appendChild(closeTocDiv);
+        tocDiv.appendChild(tocListDiv);
+        document.body.appendChild(tocDiv);
+
+        var toolButton = document.createElement("div");
+        toolButton.id = "toolButton";
+        var toolBtnLeft = document.createElement("div");
+        toolBtnLeft.id = "toolBtnLeft";
+        toolBtnLeft.innerText = "目\n錄";
+        var toolBtnRight = document.createElement("div");
+        toolBtnRight.id = "toolBtnRight";
+        toolBtnRight.innerText = "設\n定";
+        toolButton.appendChild(toolBtnLeft);
+        toolButton.appendChild(toolBtnRight);
+        document.body.appendChild(toolButton);
+
+        var toolDiv = document.createElement("div");
+        toolDiv.id = "toolDiv";
+        toolDiv.style.display = "none";
+
+        var closeToolDiv = document.createElement("div");
+        closeToolDiv.id = "closeToolDiv";
+        var closeTool = document.createElement("div");
+        closeTool.id = "closeTool";
+        closeTool.innerText = "設定";
+        closeToolDiv.appendChild(closeTool);
+
+        var toolListDiv = document.createElement("div");
+        toolListDiv.id = "toolList";
+
+        var toolLineHeightDiv = document.createElement("div");
+        toolLineHeightDiv.className = "toolItem";
+        toolLineHeightDiv.id = "tool_lineHeigh_div";
+        var lineHeightLabel = document.createElement("label");
+        lineHeightLabel.innerText = "行高";
+        var lineHeightSelect = document.createElement("select");
+        lineHeightSelect.id = "lineHeight";
+        var lineHeights = ["1.3", "1.5", "1.75", "2"];
+        for (var i = 0; i < lineHeights.length; i++) {
+            var option = document.createElement("option");
+            option.value = lineHeights[i];
+            option.text = lineHeights[i];
+            if(lineHeights[i] == '1.5') option.selected = true;
+            lineHeightSelect.appendChild(option);
+        }
+        var lineHeightAdjust = document.createElement("div");
+        lineHeightAdjust.className = "tool-adjust";
+        var lineHeightMinus = document.createElement("button");
+        lineHeightMinus.className = "adjust-btn";
+        lineHeightMinus.innerText = "-";
+        var lineHeightPlus = document.createElement("button");
+        lineHeightPlus.className = "adjust-btn";
+        lineHeightPlus.innerText = "+";
+        lineHeightAdjust.appendChild(lineHeightMinus);
+        lineHeightAdjust.appendChild(lineHeightPlus);
+        toolLineHeightDiv.appendChild(lineHeightLabel);
+        toolLineHeightDiv.appendChild(lineHeightSelect);
+        toolLineHeightDiv.appendChild(lineHeightAdjust);
+
+        var toolLetterSpacingDiv = document.createElement("div");
+        toolLetterSpacingDiv.className = "toolItem";
+        toolLetterSpacingDiv.id = "tool_letterSpacing_div";
+        var letterSpacingLabel = document.createElement("label");
+        letterSpacingLabel.innerText = "字距";
+        var letterSpacingSelect = document.createElement("select");
+        letterSpacingSelect.id = "letterSpacing";
+        var letterSpacings = ["0", "0.05em", "0.1em", "0.2em"];
+        for (var i = 0; i < letterSpacings.length; i++) {
+            var option = document.createElement("option");
+            option.value = letterSpacings[i];
+            option.text = letterSpacings[i];
+            letterSpacingSelect.appendChild(option);
+        }
+        var letterSpacingAdjust = document.createElement("div");
+        letterSpacingAdjust.className = "tool-adjust";
+        var letterSpacingMinus = document.createElement("button");
+        letterSpacingMinus.className = "adjust-btn";
+        letterSpacingMinus.innerText = "-";
+        var letterSpacingPlus = document.createElement("button");
+        letterSpacingPlus.className = "adjust-btn";
+        letterSpacingPlus.innerText = "+";
+        letterSpacingAdjust.appendChild(letterSpacingMinus);
+        letterSpacingAdjust.appendChild(letterSpacingPlus);
+        toolLetterSpacingDiv.appendChild(letterSpacingLabel);
+        toolLetterSpacingDiv.appendChild(letterSpacingSelect);
+        toolLetterSpacingDiv.appendChild(letterSpacingAdjust);
+
+        var toolFontSizeDiv = document.createElement("div");
+        toolFontSizeDiv.className = "toolItem";
+        toolFontSizeDiv.id = "tool_fontSize_div";
+        var fontSizeLabel = document.createElement("label");
+        fontSizeLabel.innerText = "字級";
+        var fontSizeSelect = document.createElement("select");
+        fontSizeSelect.id = "fontSize";
+        var fontSizes = ["90%", "100%", "110%", "120%", "130%", "150%", "180%", "200%"];
+        for (var i = 0; i < fontSizes.length; i++) {
+            var option = document.createElement("option");
+            option.value = fontSizes[i];
+            option.text = fontSizes[i];
+            if(fontSizes[i] == '110%') option.selected = true;
+            fontSizeSelect.appendChild(option);
+        }
+        var fontSizeAdjust = document.createElement("div");
+        fontSizeAdjust.className = "tool-adjust";
+        var fontSizeMinus = document.createElement("button");
+        fontSizeMinus.className = "adjust-btn";
+        fontSizeMinus.innerText = "-";
+        var fontSizePlus = document.createElement("button");
+        fontSizePlus.className = "adjust-btn";
+        fontSizePlus.innerText = "+";
+        fontSizeAdjust.appendChild(fontSizeMinus);
+        fontSizeAdjust.appendChild(fontSizePlus);
+        toolFontSizeDiv.appendChild(fontSizeLabel);
+        toolFontSizeDiv.appendChild(fontSizeSelect);
+        toolFontSizeDiv.appendChild(fontSizeAdjust);
+
+        var toolThemeDiv = document.createElement("div");
+        toolThemeDiv.className = "toolItem";
+        toolThemeDiv.id = "tool_theme_div";
+        var themeLabel = document.createElement("label");
+        themeLabel.innerText = "主題";
+        var themeDiv = document.createElement("div");
+        var themes = [
+            { id: "light", value: "light", text: "亮色", checked: true },
+            { id: "mi", value: "mi", text: "米黃" },
+            { id: "dark", value: "dark", text: "暗色" }
+        ];
+        themes.forEach(function(theme) {
+            var radioDiv = document.createElement("div");
+            var radio = document.createElement("input");
+            radio.type = "radio";
+            radio.name = "theme";
+            radio.id = theme.id;
+            radio.value = theme.value;
+            if (theme.checked) radio.checked = true;
+
+            var label = document.createElement("label");
+            label.htmlFor = theme.id;
+            label.innerText = theme.text;
+
+            radioDiv.appendChild(radio);
+            radioDiv.appendChild(label);
+            themeDiv.appendChild(radioDiv);
+        });
+        toolThemeDiv.appendChild(themeLabel);
+        toolThemeDiv.appendChild(themeDiv);
+
+        var toolLayoutDiv = document.createElement("div");
+        toolLayoutDiv.className = "toolItem";
+        var layoutLabel = document.createElement("label");
+        layoutLabel.innerText = "版面";
+        var layoutDiv = document.createElement("div");
+        var layouts = [
+            { id: "auto", value: "auto", text: "自動", checked: true },
+            { id: "none", value: "none", text: "單頁" },
+            { id: "both", value: "both", text: "跨頁" }
+        ];
+        layouts.forEach(function(layout) {
+            var radioDiv = document.createElement("div");
+            var radio = document.createElement("input");
+            radio.type = "radio";
+            radio.name = "layout";
+            radio.id = layout.id;
+            radio.value = layout.value;
+            if (layout.checked) radio.checked = true;
+            var label = document.createElement("label");
+            label.htmlFor = layout.id;
+            label.innerText = layout.text;
+            radioDiv.appendChild(radio);
+            radioDiv.appendChild(label);
+            layoutDiv.appendChild(radioDiv);
+        });
+        toolLayoutDiv.appendChild(layoutLabel);
+        toolLayoutDiv.appendChild(layoutDiv);
+
+        toolListDiv.appendChild(toolThemeDiv);
+        toolListDiv.appendChild(toolLineHeightDiv);
+        toolListDiv.appendChild(toolLetterSpacingDiv);
+        toolListDiv.appendChild(toolFontSizeDiv);
+        toolListDiv.appendChild(toolLayoutDiv);
+        toolDiv.appendChild(closeToolDiv);
+        toolDiv.appendChild(toolListDiv);
+        document.body.appendChild(toolDiv);
+
+        var viewerEvent = document.createElement("div");
+        viewerEvent.id = "viewer_event";
+        viewerEvent.innerText = "";
+        viewerEvent.style.display = "none";
+        document.body.appendChild(viewerEvent);
+    }
+
+    var book; 
+    var rendition; 
+    var cfiString; 
+    var pageProgressionDirection;    
     function start(containerId, bookUrl) {
         var layout = document.querySelector('input[name="layout"]:checked').value;
         
@@ -71,6 +522,33 @@
             rendition.themes.register('dark', { "body": { "color": "white", 'background-color': 'black' } });
             rendition.themes.register('light', { "body": { "color": "black", 'background-color': 'white' } });
             rendition.themes.register('mi', { "body": { "color": "black", 'background-color': 'Beige' } });
+            // Load saved preferences and sync UI before applying
+            (function(){
+                const prefs = loadPrefs();
+                try {
+                    if (prefs.theme) {
+                        const radio = document.querySelector(`input[name="theme"][value="${prefs.theme}"]`);
+                        if (radio) radio.checked = true;
+                    }
+                    if (prefs.layout) {
+                        const radioL = document.querySelector(`input[name="layout"][value="${prefs.layout}"]`);
+                        if (radioL) radioL.checked = true;
+                    }
+                    if (prefs.fontSize) {
+                        const sel = document.getElementById("fontSize");
+                        if (sel) sel.value = prefs.fontSize;
+                    }
+                    if (prefs.lineHeight) {
+                        const sel = document.getElementById("lineHeight");
+                        if (sel) sel.value = prefs.lineHeight;
+                    }
+                    if (prefs.letterSpacing) {
+                        const sel = document.getElementById("letterSpacing");
+                        if (sel) sel.value = prefs.letterSpacing;
+                    }
+                } catch(e){}
+            })();
+
             changeFontSize();
             changeTheme();
             changeLetterSpacing();
@@ -86,13 +564,52 @@
                     isRendering = false;
                 });
             }
+
+            function updateCFI() {
+                try {
+                    var location = rendition.currentLocation();
+                    if (location && location.start && location.start.cfi) {
+                        cfiString = location.start.cfi;
+                    } else {
+                        console.warn("目前位置沒有有效的 CFI");
+                    }
+                } catch (e) {
+                    console.error("取得 CFI 時發生錯誤", e);
+                }
+            }
+            rendition.on("rendered", updateCFI);
+        }).catch(function(e) {
+            console.error("Book loading failed:", e);
         });
+
+        if (!window.isLoadToc) {
+            window.isLoadToc = true;
+            loadToc();
+        }
     }
 
+    function loadToc() {
+        var tocList = document.getElementById("tocItems");
+        
+        if (book && book.navigation) {
+            for (var i = 0; i < book.navigation.toc.length; i++) {
+                createTocItem(tocList, book.navigation.toc[i]);
+            }
+        } else {
+            book.loaded.navigation.then(function(toc) {
+                for (var i = 0; i < toc.toc.length; i++) {
+                    createTocItem(tocList, toc.toc[i]);
+                }
+            }).catch(function(e) {
+                console.error(e);
+            });
+        }
+    }
 
     function changeFontSize() {
         var selectedFontSize = document.getElementById("fontSize").value;
         rendition.themes.fontSize(selectedFontSize);
+        savePrefs({ fontSize: document.getElementById('fontSize').value });
     }
     
     function changeTheme() {
@@ -101,33 +618,35 @@
         
         if (toolButton) {
             if (theme === 'dark') {
-                toolButton.style.color = "white";
+                toolButton.style.color = 'white';
             } else {
-                toolButton.style.color = "black";
+                toolButton.style.color = 'black';
             }
         }
-
         rendition.themes.select(theme);
-    }
-
-    function changeLetterSpacing() {
-        var selectedLetterSpacing = document.getElementById("letterSpacing").value;
-        rendition.themes.default({
-            "body": {
-                "letter-spacing": selectedLetterSpacing,
-            }
-        });
-        rendition.themes.update('default');
+        savePrefs({ theme: document.querySelector('input[name="theme"]:checked').value });
     }
 
     function changeLineHeight() {
         var selectedLineHeight = document.getElementById("lineHeight").value;
-        rendition.themes.default({
-            "*": {
-                "line-height": selectedLineHeight,
-            }
-        });
+        rendition.themes.default({"*":{"line-height": selectedLineHeight}});
         rendition.themes.update('default');
+        savePrefs({ lineHeight: document.getElementById('lineHeight').value });
+    }
+
+    function changeLetterSpacing() {
+        var selectedLetterSpacing = document.getElementById("letterSpacing").value;
+        rendition.themes.default({"body":{"letter-spacing": selectedLetterSpacing}});
+        rendition.themes.update('default');
+        savePrefs({ letterSpacing: document.getElementById('letterSpacing').value });
+    }
+
+    function changeLayout() {
+        var layout = document.querySelector('input[name="layout"]:checked').value;
+        savePrefs({ layout: document.querySelector('input[name="layout"]:checked').value });
+        var viewer = document.getElementById("viewer");
+        viewer.innerHTML = "";
+        start("viewer", "book2/item/standard.opf");
     }
 
     function goToPreviousPage() {
@@ -156,220 +675,20 @@
         });
     }
 
-    var isLoadToc = false;
-
-    function showToc() {
-        const toolDiv = document.getElementById("toolDiv");
-        if (toolDiv && toolDiv.style.display !== "none") {
-            closeTool();
-        }
-        
-        var tocDiv = document.getElementById("toc");
-        if (tocDiv && tocDiv.style.display !== "none") {
-            closeToc();
-            return;
-        }
-        tocDiv.style.display = "block";
-        if(false == isLoadToc) {
-            loadToc();
-        }
-    }
-
-    function closeToc() {
-        var tocDiv = document.getElementById("toc");
-        tocDiv.style.display = "none";
-    }
-
-    function showTool() {
-        const toc = document.getElementById("toc");
-        if (toc && toc.style.display !== "none") {
-            closeToc();
-        }
-        
-        var toolDiv = document.getElementById("toolDiv");
-        if (toolDiv && toolDiv.style.display !== "none") {
-            closeTool();
-            return;
-        }
-        toolDiv.style.display = "block";
-    }
-
-    function closeTool() {
-        var toolDiv = document.getElementById("toolDiv");
-        toolDiv.style.display = "none";
-    }
-
-    function loadToc() {
-        isLoadToc = true;
-        
-        var tocDiv = document.getElementById("toc");
-        var viewerDiv = document.getElementById("viewer");
-
-        var viewerRect = viewerDiv.getBoundingClientRect();
-
-        tocDiv.style.top = viewerRect.top + "px";
-        tocDiv.style.left = viewerRect.left + "px";
-        tocDiv.style.height = (viewerRect.height -30) + "px";
-        tocDiv.style.width = (viewerRect.width / 2) + "px";
-
-        var tocList = document.getElementById("tocList");
-        tocList.innerHTML = '';
-        
-        book.loaded.navigation.then(function(toc) {
-            function createTocItem(chapter, level) {
-                var li = document.createElement("li");
-                var button = document.createElement("button");
-                button.innerHTML = chapter.label;
-                button.onclick = function() {
-                    rendition.display(chapter.href);
-                    closeToc();
-                };
-
-                li.style.paddingLeft = (level * 20) + "px";
-
-                li.appendChild(button);
-                tocList.appendChild(li);
-
-                if (chapter.subitems) {
-                    var subList = document.createElement("ul");
-                    chapter.subitems.forEach(function(subitem) {
-                        createTocItem(subitem, level + 1);
-                    });
-                    li.appendChild(subList);
-                }
-            }
-
-            toc.forEach(function(chapter) {
-                createTocItem(chapter, 0);
-            });
-        });
-    }
-
     function adjustSelect(selectId, direction) {
         const select = document.getElementById(selectId);
-        if (!select) return;
+        const options = Array.from(select.options).map(o => o.value);
+        const currentIndex = options.indexOf(select.value);
+        const newIndex = Math.min(Math.max(0, currentIndex + direction), options.length - 1);
 
-        const options = Array.from(select.options);
-        const currentIndex = select.selectedIndex;
-
-        const newIndex = currentIndex + direction;
-
-        if (newIndex >= 0 && newIndex < options.length) {
-            select.selectedIndex = newIndex;
-            select.dispatchEvent(new Event('change'));
-        }
-    }
-
-
-    function createElements() {
-        // Create toolButton
-        const toolButton = document.createElement('div');
-        toolButton.id = 'toolButton';
-        toolButton.innerHTML = `
-            <a id="setup_button">&nbsp;⚙</a>
-            <a id="show_toc">▥</a>
-        `;
-        document.body.appendChild(toolButton);
-
-        // Create toc
-        const toc = document.createElement('div');
-        toc.id = 'toc';
-        toc.style.display = 'none';
-        toc.innerHTML = `
-            <button id="closeToc">×</button>
-            <h3>目錄</h3>
-            <ul id="tocList"></ul>
-        `;
-        document.body.appendChild(toc);
-
-        // Create toolDiv
-        const toolDiv = document.createElement('div');
-        toolDiv.id = 'toolDiv';
-        toolDiv.style.display = 'none';
-        toolDiv.innerHTML = `
-            <button id="closeTool">×</button>
-            
-            <h3>樣式調整</h3>
-            <div id="tool_layout_div">
-                <label for="layout">版式</label>
-                <label>
-                    <input type="radio" name="layout" value="auto" checked> 自動
-                </label>
-                <label>
-                    <input type="radio" name="layout" value="none"> 單欄
-                </label>
-                <label>
-                    <input type="radio" name="layout" value="always"> 雙欄
-                </label>
-            </div>
-            
-            <div id="tool_theme_div">
-                <label for="theme">背景色</label>
-                <label>
-                    <input type="radio" name="theme" value="light" checked> 白色
-                </label>
-                <label>
-                    <input type="radio" name="theme" value="mi"> 米色
-                </label>
-                <label>
-                    <input type="radio" name="theme" value="dark"> 黑暗
-                </label>
-            </div>
-            <div id="tool_lineHeigh_div">
-                <label for="lineHeight">行距</label>
-                <button class="adjust-btn">-</button>
-                <select id="lineHeight">
-                    <option value="unset">預設</option>
-                    <option value="1">1</option>
-                    <option value="1.5">1.5</option>
-                    <option value="2">2</option>
-                </select>
-                <button class="adjust-btn">+</button>
-            </div>
-            <div id="tool_letterSpacing_div">
-                <label for="letterSpacing">字距</label>
-                <button class="adjust-btn">-</button>
-                <select id="letterSpacing">
-                    <option value="unset" selected>預設</option>
-                    <option value="0.1em">0.1em</option>
-                    <option value="0.2em">0.2em</option>
-                    <option value="0.3em">0.3em</option>
-                    <option value="0.4em">0.4em</option>
-                    <option value="0.5em">0.5em</option>
-                </select>
-                <button class="adjust-btn">+</button>
-            </div>
-            <div id="tool_fontSize_div">
-                <label for="fontSize">文字大小</label>
-                <button class="adjust-btn">-</button>
-                <select id="fontSize">
-                    <option value="unset" selected>預設</option>
-                    <option value="16px">16px</option>
-                    <option value="18px">18px</option>
-                    <option value="20px">20px</option>
-                    <option value="22px">22px</option>
-                    <option value="24px">24px</option>
-                    <option value="26px">26px</option>
-                    <option value="28px">28px</option>
-                    <option value="30px">30px</option>
-                </select>
-                <button class="adjust-btn">+</button>
-            </div>
-        `;
-        document.body.appendChild(toolDiv);
-
-        // Create viewer_event
-        const viewerEvent = document.createElement('div');
-        viewerEvent.id = 'viewer_event';
-        document.body.appendChild(viewerEvent);
+        select.value = options[newIndex];
+        select.dispatchEvent(new Event('change'));
     }
 
     function init(containerId, bookUrl) {
         createElements();
-        document.addEventListener('DOMContentLoaded', function() {
-            start(containerId, bookUrl);
-            setupEventListeners();
-        });
+        setupEventListeners();
+        start(containerId, bookUrl);
     }
 
     function setupEventListeners() {
@@ -423,8 +742,6 @@
                     } else if(pageProgressionDirection == 'rtl') {
                         goToPreviousPage();
                     }
-                } else {
-                    goToNextPage();
                 }
             } else {
                 if(pageProgressionDirection) {
@@ -432,60 +749,6 @@
                         goToPreviousPage();
                     } else if(pageProgressionDirection == 'rtl') {
                         goToNextPage();
-                    }
-                } else {
-                    goToPreviousPage();
-                }
-            }
-        });
-
-        let startX = 0, startY = 0, endX = 0, endY = 0;
-
-        viewerEvent.addEventListener("touchstart", function(event) {
-            const touch = event.touches[0];
-            startX = touch.clientX;
-            startY = touch.clientY;
-        });
-
-        viewerEvent.addEventListener("touchend", function(event) {
-            const toolDiv = document.getElementById("toolDiv");
-            const toc = document.getElementById("toc");
-
-            if (toolDiv && toolDiv.style.display !== "none") {
-                return;
-            }
-
-            if (toc && toc.style.display !== "none") {
-                return;
-            }
-
-            const touch = event.changedTouches[0];
-            endX = touch.clientX;
-            endY = touch.clientY;
-
-            const diffX = endX - startX;
-            const diffY = endY - startY;
-
-            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 200) {
-                if (diffX > 0) {
-                    if(pageProgressionDirection) {
-                        if(pageProgressionDirection == 'ltr') {
-                            goToNextPage();
-                        } else if(pageProgressionDirection == 'rtl') {
-                            goToPreviousPage();
-                        }
-                    } else {
-                        goToNextPage();
-                    }
-                } else {
-                    if(pageProgressionDirection) {
-                        if(pageProgressionDirection == 'ltr') {
-                            goToPreviousPage();
-                        } else if(pageProgressionDirection == 'rtl') {
-                            goToNextPage();
-                        }
-                    } else {
-                        goToPreviousPage();
                     }
                 }
             }
@@ -496,30 +759,37 @@
         });
 
         document.addEventListener("keydown", function (event) {
+            const tag = (event.target && event.target.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+
             if (event.key === "ArrowLeft") {
-                goToPreviousPage();
+                if (pageProgressionDirection === 'rtl') { goToNextPage(); } else { goToPreviousPage(); }
                 event.preventDefault();
             } else if (event.key === "ArrowRight") {
-                goToNextPage();
+                if (pageProgressionDirection === 'rtl') { goToPreviousPage(); } else { goToNextPage(); }
                 event.preventDefault();
-            } else {
+            } else if ((event.ctrlKey || event.metaKey) && (event.key === '+' || event.key === '=')) {
+                var sel = document.getElementById('fontSize');
+                if (sel) { 
+                    var opts = Array.from(sel.options).map(o=>o.value);
+                    var idx = Math.max(0, opts.indexOf(sel.value));
+                    if (idx < opts.length-1) { sel.value = opts[idx+1]; changeFontSize(); }
+                }
                 event.preventDefault();
-            }
-        });
-
-        document.addEventListener("mousedown", function (event) {
-            if (event.button !== 0 && event.button !== 2) {
-                event.preventDefault();
-            }
-        });
-
-        document.addEventListener("keydown", function (event) {
-            if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
+            } else if ((event.ctrlKey || event.metaKey) && event.key === '-') {
+                var sel = document.getElementById('fontSize');
+                if (sel) { 
+                    var opts = Array.from(sel.options).map(o=>o.value);
+                    var idx = Math.max(0, opts.indexOf(sel.value));
+                    if (idx > 0) { sel.value = opts[idx-1]; changeFontSize(); }
+                }
                 event.preventDefault();
             }
         });
 
         document.addEventListener("keypress", function (event) {
+            const tag = (event.target && event.target.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
             event.preventDefault();
         });
     }
@@ -528,4 +798,3 @@
         init: init
     };
 })();
-

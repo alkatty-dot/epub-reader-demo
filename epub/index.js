@@ -707,3 +707,29 @@ function debounce(fn, wait) {
 #viewer_event {
   background: transparent !important; /* 確保事件區不蓋一層白霧 */
 }
+
+#toolButton {
+  position: fixed; /* 改固定在視窗右上角 */
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999; /* 確保在最上層 */
+}
+#toolButton a, #toolButton button {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #ffffffee;
+  color: #111827;
+  border: 1px solid rgba(0,0,0,.1);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 10px rgba(0,0,0,.15);
+}
+[data-theme="dark"] #toolButton a,
+[data-theme="dark"] #toolButton button {
+  background: #1f2937cc;
+  color: #f9fafb;
+  border-color: rgba(255,255,255,.1);
+}

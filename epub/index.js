@@ -15,6 +15,26 @@
 
   // State
   let book, rendition, currentTheme = "light";
+  function detectFXL() {
+    const md = book?.package?.metadata || {};
+    return md.layout === 'pre-paginated' || md.fixed_layout === true;
+  }
+
+  function applyLayoutByMode(mode) {
+    // mode: 'none' | 'auto' | 'both'  (UI semantics)
+    // for reflow: keep paginated, spread depends on mode
+    // for FXL: force paginated; 'auto' -> 'both' (對頁), 'none' -> 'none'
+    const isFXL = detectFXL();
+    let spreadMode = mode;
+    if (isFXL) {
+      rendition.flow('paginated');
+      if (mode === 'auto') spreadMode = 'both'; // FXL 預設對頁顯示
+    } else {
+      rendition.flow('paginated');
+    }
+    try { rendition.spread(spreadMode); } catch(e) {}
+  }
+
 
   // ---------- Metadata to header ----------
   async function applyMetadata() {
@@ -91,7 +111,7 @@
     }
   }
 
-  spreadSelect?.addEventListener('change', () => setSpread(spreadSelect.value));
+  spreadSelect?.addEventListener('change', () => applyLayoutByMode(spreadSelect.value));
   zoomMode?.addEventListener('change', () => { relayout(); });
   zoomRange?.addEventListener('input', () => { if (zoomMode.value==='custom') relayout(); });
 
@@ -156,7 +176,7 @@
       } catch (e) {}
     }
     
-autoChooseFlow();
+
 relayout();
 
     applyMetadata();

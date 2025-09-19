@@ -137,3 +137,5 @@ body {
 #viewer iframe { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border: 0; }
 /* When using scrolled-doc, the iframe might be static; still ensure it expands */
 .viewer iframe { width: 100% !important; height: 100% !important; }
+
+#viewer iframe{max-width:100%;max-height:100%;}

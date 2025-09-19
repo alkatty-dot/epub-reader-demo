@@ -32,6 +32,77 @@
     var cfiString;
     var pageProgressionDirection;
 
+// === 底部進度條與頁碼 ===
+// 在 #viewer 裡面掛兩個輔助節點（僅視覺）
+(function injectReaderChrome() {
+  const v = document.getElementById('viewer');
+  if (!v || v.querySelector('#progressBarWrap')) return;
+  const barWrap = document.createElement('div');
+  barWrap.id = 'progressBarWrap';
+  const bar = document.createElement('div');
+  bar.id = 'progressBar';
+  barWrap.appendChild(bar);
+
+  const badge = document.createElement('div');
+  badge.id = 'pageBadge';
+  badge.textContent = '—';
+
+  v.appendChild(barWrap);
+  v.appendChild(badge);
+})();
+
+// 根據 relocated 更新進度與頁碼（不更動翻頁流程）
+function updateProgressAndPage(loc) {
+  try {
+    // cfi 進度百分比（依你既有的 book.locations/或 percentage 計算）
+    let percent = 0;
+    if (book && book.locations && book.locations.percentageFromCfi) {
+      percent = book.locations.percentageFromCfi(loc.start.cfi) * 100;
+    } else if (loc && loc.percentage != null) {
+      percent = loc.percentage * 100;
+    }
+    const p = Math.max(0, Math.min(100, Math.round(percent)));
+    const bar = document.getElementById('progressBar');
+    if (bar) bar.style.width = p + '%';
+
+    // 頁碼顯示：若有 displayed.page/totalPage 可用就顯示，沒有就顯示章節名或百分比
+    const badge = document.getElementById('pageBadge');
+    if (badge) {
+      const page = loc?.displayed?.page;
+      const total = loc?.displayed?.total;
+      if (page && total) {
+        badge.textContent = `${page} / ${total}`;
+      } else {
+        badge.textContent = p + '%';
+      }
+    }
+  } catch (e) {}
+}
+
+// 綁定 relocated（沿用你既有的 rendition 物件）
+if (typeof rendition !== 'undefined') {
+  rendition.on('relocated', updateProgressAndPage);
+}
+
+// === （可選）從 metadata 寫入標題與資訊列 ===
+(async function fillHeaderFromMeta() {
+  try {
+    const meta = await book.loaded.metadata;
+    const title = meta?.title || '';
+    const pub = (meta?.publisher || '').trim();
+    const isbn = (meta?.identifier || '').trim();
+
+    if (title) document.getElementById('rhTitle')?.replaceChildren(document.createTextNode(title));
+
+    const metaText = [
+      pub ? `出版社：${pub}` : null,
+      isbn ? `ISBN：${isbn}` : null
+    ].filter(Boolean).join(' · ');
+    if (metaText) document.getElementById('rhMeta')?.replaceChildren(document.createTextNode(metaText));
+  } catch (_) {}
+})();
+
+	
     function changeLayout() {
         book.destroy();
         start("viewer", "book2/item/standard.opf");

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script type="text/javascript" src="data.js"></script>
+    <title>2025童書星創獎【出版組】</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>2025童書星創獎【出版組】線上評審</h1>
+        <p>首次新增出版組，獎勵已經出版發行並申請ISBN之電子書，選出3名特優（獎金$12,000+獎盃乙座）和7名優選（獎金$8,000+獎盃乙座）</p>
+    </div>
+
+    <div class="stats">
+        <div class="stat-item">
+            <span class="stat-number" id="totalBooks">1</span>
+            <span class="stat-label">總計圖書</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number" id="publisherCount">1</span>
+            <span class="stat-label">出版社</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="books-grid" id="booksGrid">
+            <!-- Books will be dynamically generated here -->
+        </div>
+    </div>
+
+    <script>
+    
+        function escapeHTML(str) {
+            return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        function getFileExtension(filename) {
+            return filename.split('.').pop().toLowerCase();
+        }
+
+        function getFileIcon(filename) {
+            const extension = getFileExtension(filename);
+            switch (extension) {
+            case 'epub': return '📖';
+            case 'pdf':  return '📄';
+            case 'zip':  return '🗃️';
+            default:     return '📎';
+            }
+        }
+
+        function createBookCard(book) {
+            const fileIcon = getFileIcon(book.file);
+            const fileType = getFileExtension(book.file).toUpperCase();
+            
+            return `
+                <div class="book-card fade-in">
+            	<div class="book-cover">
+			            ${book.cover && book.cover !== book.title ? 
+			                `<img src="${book.cover}" alt="${book.title}" onerror="this.parentElement.innerHTML='<div class=\\'book-cover-placeholder\\'>📚</div>'">` :
+			                `<div class="book-cover-placeholder">📚</div>`
+			            }
+			        </div>
+                    <div class="book-header">
+                        <span class="book-number">#${book.number}</span>
+                        <h3 class="book-title">${book.title}</h3>
+                        <div class="book-publisher">
+                            <span class="publisher-icon">🏢</span>
+                            ${book.publisher}
+                        </div>
+                    </div>
+                    <div class="book-body">
+                        <div class="book-isbn">
+                            <strong>ISBN:</strong> ${book.isbn}
+                        </div>
+                        <div class="book-files">
+                            <div class="file-info">
+                                <span class="file-icon">${fileIcon}</span>
+                                <span>${book.file} ${fileType && fileType !== book.file.toUpperCase() ? '(' + fileType + ')' : ''}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="book-actions">
+                        <button class="action-btn btn-primary" onclick="viewBook(${book.number})">
+                            📖 閱讀
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function viewBook(bookNumber) {
+            const book = booksData.find(b => b.number === bookNumber);
+            
+            const fileName = book.file.trim();
+            const idx = fileName.lastIndexOf('.');
+            if (idx === -1) {
+             	alert('檔名沒有副檔名：' + fileName );
+              return;
+            }
+
+            const ext = fileName.substring(idx + 1).toLowerCase();
+            
+            if (ext === 'epub') {
+                window.open('epub/epub.html?id=' + encodeURIComponent(book.number));
+              } else if (ext === 'pdf') {
+                window.open('pdf/pdf.html?id=' + encodeURIComponent(book.number));
+              } else {
+            	  alert('不支援的檔案類型：.' + ext + '（檔名：' + fileName + '）');
+              }
+        }
+
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            const grid = document.getElementById('booksGrid');
+            grid.innerHTML = booksData.map(book => createBookCard(book)).join('');
+            
+            // 更新統計
+            document.getElementById('totalBooks').textContent = booksData.length;
+            const publishers = [...new Set(booksData.map(book => book.publisher))];
+            document.getElementById('publisherCount').textContent = publishers.length;
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>2025童書星創獎【EPUB閱讀器】</title>
+  
+  <!-- 保持乾淨：樣式統一放 epub.css -->
+  <link rel="stylesheet" href="epub.css">
+
+  <!-- 必要程式 -->
+  <script type="text/javascript" src="../data.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+  <script src="epub.min.js"></script>
+  <script src="index.js"></script>
+</head>
+<body>
+  
+  <!-- 書名 / 出版資訊 -->
+  <div id="title"></div>
+
+  <!-- 閱讀器畫面 -->
+  <div id="viewer"></div>
+
+  <!-- 🔹控制區塊 -->
+  <div class="controls">
+    <div class="navigation-buttons">
+      <!-- 這些按鈕會被 JS 綁定功能，這裡只需要保留 id + class -->
+      <button id="prev" class="btn btn-primary">上一頁</button>
+      <button id="next" class="btn btn-primary">下一頁</button>
+      <button id="increaseFont" class="btn btn-accent">放大</button>
+      <button id="decreaseFont" class="btn btn-ghost">縮小</button>
+    </div>
+    <div class="extra-controls">
+      <button id="tocButton" class="btn btn-ghost">目錄</button>
+      <button id="settingsButton" class="btn btn-ghost">設定</button>
+    </div>
+  </div>
+
+  <script>
+    function do_logic(){  
+      document.getElementById("title").innerHTML += 
+        "<h3>" + selected_book.title + "</h3>" + 
+        " 出版社:" + selected_book.publisher + 
+        " ISBN:" + selected_book.isbn ;
+      EPUBReader.init('viewer', '../' + selected_book.file);
+    }
+  </script>
+  
+  <script type="text/javascript" src="../get_data.js"></script>
+</body>
+</html>

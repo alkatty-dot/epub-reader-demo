@@ -1,0 +1,156 @@
+/* ======= Fun, Clean, Responsive PDF Reader (Pager right of Close) ======= */
+
+:root{
+  --bg:#f6f7fb;
+  --panel:#ffffff;
+  --text:#1f2937;
+  --sub:#6b7280;
+  --accent:#6366f1;   /* 上/下一頁 主色 */
+  --accent-2:#8b5cf6;
+  --warn:#fcd34d;     /* 放大/縮小 */
+  --warn-2:#fbbf24;
+  --danger:#ef4444;   /* 關閉 */
+  --danger-2:#dc2626;
+  --border:#e5e7eb;
+  --shadow:0 8px 24px rgba(0,0,0,.06);
+}
+
+/* Reset */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"PingFang TC","Microsoft JhengHei",sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(80% 60% at 10% 0%, #eef2ff 0%, transparent 60%),
+    radial-gradient(80% 60% at 90% 0%, #fde68a 0%, transparent 60%),
+    var(--bg);
+}
+
+/* ===== 容器 ===== */
+#pdf-main-container{
+  width:min(100%,1400px);
+  min-height:70vh;
+  margin:clamp(12px,4vw,28px) auto;
+  padding:clamp(10px,2.5vw,16px);
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  display:grid;
+  grid-template-rows:auto 1fr auto;
+  gap:12px;
+}
+
+/* ===== 載入 ===== */
+#pdf-loader,#page-loader{
+  width:100%; text-align:center; color:var(--sub); font-size:15px;
+}
+#pdf-loader{ display:grid; place-items:center; min-height:40vh; }
+#page-loader{ display:none; }
+#pdf-loader::after,#page-loader::after{
+  content:""; width:18px; height:18px; border-radius:50%;
+  border:2px solid var(--border); border-top-color:var(--accent);
+  display:inline-block; margin-left:10px; animation:spin 1s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+/* ===== 內容 ===== */
+#pdf-contents{ display:block; }
+
+/* ===== 工具列（左：功能＋提示｜右：頁碼＋關閉） ===== */
+#pdf-buttons{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  background:linear-gradient(180deg,#fafbff 0%, #fff 100%);
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+}
+
+/* 按鈕共用樣式 */
+#pdf-buttons button{
+  appearance:none; border:none; padding:10px 18px; border-radius:9999px;
+  font-weight:600; font-size:.95rem; cursor:pointer;
+  background:#fff; color:#374151;
+  box-shadow:0 2px 6px rgba(0,0,0,.05);
+  transition:all .25s ease; display:flex; align-items:center; gap:6px;
+}
+#pdf-buttons button:hover{ transform:translateY(-2px); box-shadow:0 6px 14px rgba(0,0,0,.15); }
+#pdf-buttons button:active{ transform:translateY(0); box-shadow:0 2px 6px rgba(0,0,0,.08); }
+
+/* 左側：上一頁/下一頁（紫藍），放大/縮小（黃橘） */
+#prev, #next{
+  background:linear-gradient(135deg,var(--accent),var(--accent-2)) !important;
+  color:#fff !important;
+}
+#pdf-buttons button[onclick*="addScale"]{
+  background:linear-gradient(135deg,var(--warn),var(--warn-2));
+  color:#fff;
+}
+
+/* 左側：鍵盤提示（小螢幕隱藏） */
+#pdf-buttons::before{
+  content:"貼心提示：a/d 換頁、+/- 縮放";
+  margin-left:6px; padding:6px 10px; font-size:12px; color:var(--sub);
+  background:#f3f4f6; border:1px solid var(--border); border-radius:9999px;
+}
+@media (max-width:1024px){ #pdf-buttons::before{ display:none; } }
+
+/* 右側：關閉（最右） */
+#pdf-buttons button[onclick*="close"],
+#pdf-buttons .close-btn,
+#pdf-buttons #close{
+  margin-left:auto;              /* 把右半邊推開 */
+  order:99;
+  background:linear-gradient(135deg,var(--danger),var(--danger-2)) !important;
+  color:#fff !important;
+  min-width:72px;
+}
+
+/* 右側：頁碼膠囊（緊鄰關閉，靠右排列） */
+/* 以含有 #page_num 的容器為膠囊；相容不同樣板 */
+#pdf-buttons > div[style*="float"]:not(:has(#page_num)){ display:none !important; }
+
+#pdf-buttons > div:has(#page_num){
+  order:98;
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 14px;
+  min-width:120px;
+  border-radius:9999px;
+  background:#fff; border:1px solid var(--border);
+  box-shadow:0 2px 8px rgba(0,0,0,.06);
+  font-weight:700; font-variant-numeric:tabular-nums;
+}
+
+/* 內容：頁數：7／26 */
+#pdf-buttons > div:has(#page_num)::before{
+  content:"頁數："; color:var(--sub); font-weight:600;
+}
+#page_num{ color:#374151 !important; font-weight:700; }
+
+/* 畫布 */
+#pdf-canvas{
+  display:block; width:100% !important; height:auto !important;
+  border:1px solid var(--border); border-radius:12px;
+  background:#fff; box-shadow:inset 0 1px 0 rgba(0,0,0,.02);
+}
+
+/* 手機：頁碼與關閉改為各占一行，避免擠壓 */
+@media (max-width:768px){
+  #pdf-buttons{ gap:6px; padding:8px 10px; }
+  #pdf-buttons button{ flex:1 1 auto; justify-content:center; font-size:1rem; padding:12px 0; }
+  #pdf-buttons > div:has(#page_num){ order:98; flex:1 0 100%; justify-content:center; }
+  #pdf-buttons button[onclick*="close"], #pdf-buttons .close-btn, #pdf-buttons #close{ order:99; flex:1 0 100%; }
+}
+
+/* 深色模式 */
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1220; --panel:#12162a; --text:#e5e7eb; --sub:#9ca3af; --border:#2a2f45;
+    --shadow:0 8px 24px rgba(0,0,0,.5);
+  }
+  body{ background:#0f1220; }
+  #pdf-buttons{ background:linear-gradient(180deg,#12162a 0%, #0f1326 100%); }
+  #pdf-loader::after,#page-loader::after{ border-color:#2a2f45; border-top-color:var(--accent); }
+}

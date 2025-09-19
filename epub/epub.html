@@ -10,30 +10,37 @@
 
   <!-- 必要程式 -->
   <script type="text/javascript" src="../data.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-  <script src="epub.min.js"></script>
-  <script src="index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js" defer></script>
+  <script src="epub.min.js" defer></script>
+  <script src="index.js" defer></script>
 </head>
 <body>
   
   <!-- 書名 / 出版資訊 -->
-  <div id="title"></div>
+  <div id="title" role="banner" aria-live="polite"></div>
 
   <!-- 閱讀器畫面 -->
-  <div id="viewer"></div>
+  <div id="viewer" role="region" aria-label="EPUB 閱讀器" aria-busy="true"></div>
+
+  <!-- 載入動畫 -->
+  <div id="loading" aria-hidden="true" hidden>
+    <div class="spinner" aria-label="載入中…"></div>
+  </div>
+
+    <!-- 訊息吐司 -->
+  <div id="toast" role="status" aria-live="polite" hidden></div>
 
   <!-- 🔹控制區塊 -->
-  <div class="controls">
+  <div class="controls" role="toolbar" aria-label="閱讀控制">
     <div class="navigation-buttons">
-      <!-- 這些按鈕會被 JS 綁定功能，這裡只需要保留 id + class -->
-      <button id="prev" class="btn btn-primary">上一頁</button>
-      <button id="next" class="btn btn-primary">下一頁</button>
-      <button id="increaseFont" class="btn btn-accent">放大</button>
-      <button id="decreaseFont" class="btn btn-ghost">縮小</button>
+      <button id="prev" class="btn btn-primary" aria-label="上一頁">上一頁</button>
+      <button id="next" class="btn btn-primary" aria-label="下一頁">下一頁</button>
+      <button id="increaseFont" class="btn btn-accent" aria-label="放大字體">放大</button>
+      <button id="decreaseFont" class="btn btn-ghost" aria-label="縮小字體">縮小</button>
     </div>
     <div class="extra-controls">
-      <button id="tocButton" class="btn btn-ghost">目錄</button>
-      <button id="settingsButton" class="btn btn-ghost">設定</button>
+      <button id="tocButton" class="btn btn-ghost" aria-haspopup="true" aria-controls="toc">目錄</button>
+      <button id="settingsButton" class="btn btn-ghost" aria-haspopup="true" aria-controls="toolDiv">設定</button>
     </div>
   </div>
 

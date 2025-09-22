@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>EPUB Reader</title>
+  <title>EPUB閱讀器｜2025童書星創獎</title>
 
   <!-- Styles -->
   <link rel="stylesheet" href="epub.css" />
@@ -94,6 +94,15 @@
     </section>
   </main>
 
-  <noscript>本頁需要 JavaScript 才能運作。</noscript>
+  <div id="title"></div>
+  <div id="viewer"></div>
+
+  <script>
+    function do_logic(){  
+    	document.getElementById("title").innerHTML += "<h3>" + selected_book.title + "</h3>" + " 出版社:" + selected_book.publisher + " ISBN:" + selected_book.isbn ;
+    	EPUBReader.init('viewer', '../'+selected_book.file);
+    }
+  </script>
+
 </body>
 </html>

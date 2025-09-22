@@ -131,8 +131,8 @@ let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZo
     else s = vw / dw;
 
     currentScale = s;
-    // removed v11
-    // removed v11
+    doc.documentElement.style.transformOrigin = '0 0';
+    doc.documentElement.style.transform = 'scale(' + s + ')';
     const w = Math.ceil(dw * s), h = Math.ceil(dh * s);
     iframe.style.width = w + 'px';
     iframe.style.height = h + 'px';
@@ -155,10 +155,10 @@ let zoomState = { mode: (document.getElementById('zoomMode')?.value || defaultZo
           else if (zoomState.mode === 'custom') s = (parseInt(zoomRange?.value||'100',10))/100;
           else s = vw / (dw || vw); // fit-width
           zoomState.scale = s;
-          // removed v11
-          // removed v11
-          // removed v11
-          // removed v11
+          doc.documentElement.style.transformOrigin = '0 0';
+          doc.documentElement.style.transform = 'scale(' + s + ')';
+          iframe.style.width = Math.ceil((dw||vw) * s) + 'px';
+          iframe.style.height = Math.ceil((dh||vh) * s) + 'px';
         }
       }
     } else {
@@ -312,7 +312,7 @@ maybeFixLayout();
       "p": { "margin": "0 0 1em 0" },
       "body": { "max-width": "100%", "word-break": "break-word" },
       "img": { "display":"block" },
-      "html, body": { "column-gap": "2rem" }
+      "html, body": { "column-gap": "2rem" },
       "h1, h2, h3, h4, h5, h6": { "margin": "1.2em 0 .6em" },
       "@page": { "margin": "0 0 1rem 0" }
     });
